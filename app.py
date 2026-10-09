@@ -638,6 +638,16 @@ def api_check():
     return jsonify(check_address(url))
 
 
+@app.get("/api/presets/export")
+def api_presets_export():
+    """The saved presets as a file to keep, or to load into another PiRadio."""
+    body = json.dumps(load_presets(), indent=2, ensure_ascii=False) + "\n"
+    resp = app.response_class(body, mimetype="application/json")
+    resp.headers["Content-Disposition"] = 'attachment; filename="piradio-presets.json"'
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
+
+
 @app.put("/api/presets")
 def api_presets():
     presets = clean_presets(request.get_json(silent=True))
