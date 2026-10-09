@@ -1,0 +1,474 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="{{ name }}">
+<meta name="theme-color" content="#1c1814">
+<link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
+<link rel="icon" type="image/png" href="/static/icon-192.png">
+<link rel="manifest" href="/manifest.webmanifest">
+<title>{{ name }}</title>
+<style>
+  :root {
+    --bg: #f4efe6; --panel: #fffaf1; --ink: #2a221a; --muted: #7d7062;
+    --line: #dfd4c2; --accent: #b4532a; --accent-ink: #fff8ee; --warn: #9a3412; --bad: #b91c1c;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1c1814; --panel: #27211b; --ink: #f1e8da; --muted: #a39584;
+      --line: #3b3229; --accent: #e08a4f; --accent-ink: #1c1814; --warn: #f0a273; --bad: #ff6b6b;
+    }
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 17px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    padding: max(20px, env(safe-area-inset-top)) 16px max(24px, env(safe-area-inset-bottom));
+  }
+  main { max-width: 460px; margin: 0 auto; }
+  header { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 14px; }
+  h1 { font-size: 22px; margin: 0; letter-spacing: .02em; }
+  .link { background: none; border: 0; color: var(--accent); font: inherit; font-size: 15px; padding: 6px 0; cursor: pointer; }
+  #now {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
+    padding: 14px 16px; min-height: 76px; margin-bottom: 16px;
+  }
+  #now .label { font-size: 12px; text-transform: uppercase; letter-spacing: .09em; color: var(--muted); }
+  #now .station { font-size: 20px; font-weight: 600; margin-top: 2px; }
+  #now .title { min-height: 1.4em; font-size: 14px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #presets { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .preset {
+    display: flex; align-items: center; gap: 10px; text-align: left;
+    background: var(--panel); color: var(--ink); border: 1px solid var(--line);
+    border-radius: 14px; padding: 14px 12px; min-height: 68px;
+    font: inherit; font-weight: 600; cursor: pointer;
+  }
+  .preset .num {
+    flex: none; width: 26px; height: 26px; border-radius: 50%;
+    border: 1px solid var(--line); color: var(--muted);
+    font-size: 13px; display: grid; place-items: center;
+  }
+  .preset.on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+  .preset.on .num { border-color: var(--accent-ink); color: var(--accent-ink); }
+  .preset.empty { color: var(--muted); font-weight: 400; border-style: dashed; }
+  .preset:active, #stop:active { transform: scale(.98); }
+  #stop {
+    width: 100%; margin-top: 12px; padding: 14px; border-radius: 14px;
+    background: none; color: var(--ink); border: 1px solid var(--line);
+    font: inherit; font-weight: 600; cursor: pointer;
+  }
+  .vol { display: flex; align-items: center; gap: 12px; margin-top: 20px; }
+  .vol label { font-size: 14px; color: var(--muted); }
+  .vol output { width: 3ch; text-align: right; font-variant-numeric: tabular-nums; color: var(--muted); font-size: 14px; }
+  input[type=range] { flex: 1; accent-color: var(--accent); height: 32px; }
+  #msg { min-height: 22px; margin-top: 14px; font-size: 14px; color: var(--warn); }
+  /* edit view */
+  .row { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 12px; margin-bottom: 10px; }
+  .row .top { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+  .row input {
+    width: 100%; font: inherit; font-size: 16px; color: var(--ink); background: var(--bg);
+    border: 1px solid var(--line); border-radius: 8px; padding: 9px 10px;
+  }
+  .row .url, .row .np { font-size: 14px; }
+  .row .np { margin-top: 8px; }
+  .icon { flex: none; width: 40px; height: 40px; border-radius: 8px; border: 1px solid var(--line); background: none; color: var(--ink); font-size: 16px; cursor: pointer; }
+  .actions { display: flex; gap: 10px; margin-top: 8px; }
+  .actions button { flex: 1; padding: 13px; border-radius: 12px; font: inherit; font-weight: 600; cursor: pointer; border: 1px solid var(--line); background: none; color: var(--ink); }
+  .actions .primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+  .note { font-size: 13px; margin-top: 8px; color: var(--muted); }
+  .note.warn { color: var(--warn); }
+  .note.bad, #msg.bad { color: var(--bad); font-weight: 700; }
+  .note button { margin-left: 6px; }
+  .small { font: inherit; font-size: 13px; padding: 5px 10px; border-radius: 8px; border: 1px solid var(--line); background: none; color: var(--ink); cursor: pointer; }
+  .tools { display: flex; gap: 18px; flex-wrap: wrap; }
+  #find { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 12px; margin-top: 12px; }
+  #find .bar { display: flex; gap: 8px; }
+  #find input { flex: 1; min-width: 0; font: inherit; font-size: 16px; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 9px 10px; }
+  .result { display: block; width: 100%; text-align: left; font: inherit; color: var(--ink); background: none; border: 0; border-top: 1px solid var(--line); padding: 10px 2px; cursor: pointer; }
+  .result:first-child { border-top: 0; }
+  .result small { display: block; color: var(--muted); font-size: 13px; }
+  #find input[type=search] { -webkit-appearance: none; appearance: none; }
+  #find input[type=search]::-webkit-search-cancel-button, #find input[type=search]::-webkit-search-decoration { -webkit-appearance: none; display: none; }
+  #findMsg { font-size: 13px; color: var(--muted); margin-top: 8px; }
+  .hint { font-size: 13px; color: var(--muted); margin: 4px 0 14px; }
+  #powerBtn { display: block; margin: 28px auto 0; padding: 10px 18px; font-size: 14px; color: var(--muted); border: 1px solid var(--line); border-radius: 12px; }
+  #powerBtn:active { transform: scale(.98); }
+  #off { text-align: center; padding-top: 18vh; }
+  #off h1 { margin-bottom: 14px; }
+  #off p { color: var(--muted); margin: 0 0 10px; }
+  #stop, #powerBtn { transition: background-color .25s, color .25s, border-color .25s; }
+  #stop.flash, #powerBtn.flash { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); transition: none; }
+  /* Up to eight presets: everything in one column.
+     More than eight (.many): the presets scroll, and the now-playing box,
+     Stop Playing, Power off (side by side) and volume stay put above and below them. */
+  #play { display: flex; flex-direction: column; }
+  #scroll { display: contents; }
+  #play.many {
+    height: calc(100vh - max(20px, env(safe-area-inset-top)) - max(24px, env(safe-area-inset-bottom)));
+    height: calc(100dvh - max(20px, env(safe-area-inset-top)) - max(24px, env(safe-area-inset-bottom)));
+  }
+  #play.many > header, #play.many #now, #play.many #bar { flex: none; }
+  #play.many #now { margin-bottom: 12px; }
+  #play.many #scroll {
+    display: block; flex: 1 1 auto; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain; padding: 2px 0 12px;
+    border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); padding-top: 12px;
+  }
+  /* Stop Playing and Power off: one row, each as wide as a preset button. */
+  .btns { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 12px; }
+  .btns #stop { width: auto; margin-top: 0; }
+  .btns #powerBtn { margin: 0; padding: 10px 12px; border-radius: 14px; line-height: 1.25; }
+  #play.many #msg { margin-top: 6px; min-height: 0; }
+  #play.many #msg:empty { display: none; }
+  #play.many .vol { margin-top: 10px; }
+  .foot { position: sticky; bottom: 0; background: var(--bg); padding: 2px 0 10px; margin-top: 4px; }
+  #editMsg { min-height: 22px; margin-top: 10px; font-size: 14px; color: var(--warn); }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<main>
+  <section id="play">
+    <header><h1>{{ name }}</h1><button class="link" id="editBtn">Edit presets</button></header>
+    <div id="now">
+      <div class="label" id="nowLabel">Radio</div>
+      <div class="station" id="nowStation">Off</div>
+      <div class="title" id="nowTitle">---</div>
+    </div>
+    <div id="scroll">
+      <div id="presets"></div>
+    </div>
+    <div id="bar">
+      <div class="btns">
+        <button id="stop">Stop Playing</button>
+        <button class="link" id="powerBtn">Power off {{ name }}</button>
+      </div>
+      <div class="vol">
+        <label for="vol">Volume</label>
+        <input id="vol" type="range" min="0" max="100" step="1" value="50">
+        <output id="volOut">50</output>
+      </div>
+      <div id="msg" role="status"></div>
+    </div>
+  </section>
+
+  <section id="off" hidden>
+    <h1>Shutting down</h1>
+    <p>Wait until the Pi's green light stops flickering and stays off (about 30 seconds), then unplug it.</p>
+    <p>To start it again, plug it back in.</p>
+  </section>
+
+  <section id="edit" hidden>
+    <header><h1>Edit presets</h1></header>
+    <p class="hint">Each preset needs a name and the station's direct stream address (starts with http:// or https://). The now-playing feed is optional and only needed when a station doesn't show the artist and song by itself.</p>
+    <div id="rows"></div>
+    <div class="tools">
+      <button class="link" id="addBtn">+ Add preset</button>
+      <button class="link" id="findBtn">Find a station</button>
+      <button class="link" id="sortBtn">Sort by frequency</button>
+    </div>
+    <div id="find" hidden>
+      <div class="bar">
+        <input id="findQ" type="search" placeholder="Station name" autocapitalize="off" autocomplete="off" autocorrect="off" spellcheck="false" enterkeyhint="search">
+        <button class="small" id="findGo">Search</button>
+      </div>
+      <div id="findMsg">Searches the community Radio Browser directory. Tap a result to add it as a preset.</div>
+      <div id="findResults"></div>
+    </div>
+    <div class="foot">
+      <div id="editMsg" role="status"></div>
+      <div class="actions">
+        <button id="cancelBtn">Cancel</button>
+        <button class="primary" id="saveBtn">Save</button>
+      </div>
+    </div>
+  </section>
+</main>
+<script>
+const MAX = {{ max_presets }};
+const $ = id => document.getElementById(id);
+let state = { presets: [], current: null, playing: false, volume: -1, title: "" };
+let volBusy = 0;
+
+async function api(method, path, body) {
+  const res = await fetch(path, {
+    method,
+    headers: body ? { "Content-Type": "application/json" } : {},
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || "Something went wrong.");
+  return data;
+}
+
+let builtFor = "";   // which preset list the buttons were built for
+let actionSeq = 0;   // bumped on every tap, so older replies can be ignored
+
+function setText(id, text) { const el = $(id); if (el.textContent !== text) el.textContent = text; }
+
+function render() {
+  const box = $("presets");
+  const sig = JSON.stringify(state.presets.map(p => [p.name, !!p.url]));
+  if (sig !== builtFor) {            // rebuild only when the presets changed
+    box.textContent = "";
+    state.presets.forEach((p, i) => {
+      const b = document.createElement("button");
+      const n = document.createElement("span"); n.className = "num"; n.textContent = i + 1;
+      const t = document.createElement("span"); t.textContent = p.name;
+      b.append(n, t);
+      b.onclick = () => play(i);
+      box.append(b);
+    });
+    builtFor = sig;
+    $("play").classList.toggle("many", state.presets.length > 8);
+  }
+  [...box.children].forEach((b, i) => {
+    const cls = "preset" + (state.current === i ? " on" : "") + (state.presets[i].url ? "" : " empty");
+    if (b.className !== cls) b.className = cls;
+  });
+  if (state.playing) {
+    setText("nowLabel", "Now playing");
+    setText("nowStation", state.current !== null ? state.presets[state.current].name : "Radio");
+    setText("nowTitle", state.recovering ? (state.connecting ? "Trying to connect\u2026" : "Reconnecting\u2026") : (state.title || "---"));
+  } else {
+    setText("nowLabel", "Radio");
+    setText("nowStation", "Off");
+    setText("nowTitle", "---");
+  }
+  if (state.volume >= 0 && Date.now() > volBusy) {
+    $("vol").value = state.volume; $("volOut").textContent = state.volume;
+  }
+}
+
+async function refresh() {
+  if (!$("edit").hidden || !$("off").hidden) return;
+  const seq = actionSeq;
+  try {
+    const fresh = await api("GET", "/api/status");
+    if (seq !== actionSeq) return;   // a button was tapped meanwhile; this reply is out of date
+    state = fresh;
+    // While a station is being retried, the player's raw error is just noise.
+    setText("msg", state.notice || (state.error && !state.recovering ? "Player: " + state.error : ""));
+    $("msg").classList.toggle("bad", !!state.notice);
+    render();
+  } catch (e) { if (seq === actionSeq) setText("msg", e.message); }
+}
+
+async function play(i) {
+  $("msg").textContent = "";
+  const seq = ++actionSeq;
+  state.current = i; state.playing = true; state.title = ""; render();
+  try {
+    const fresh = await api("POST", "/api/play/" + i);
+    if (seq !== actionSeq) return;   // another button was tapped since
+    state = fresh; render();
+    setTimeout(refresh, 2500);
+  } catch (e) { if (seq === actionSeq) { $("msg").textContent = e.message; refresh(); } }
+}
+
+$("stop").onclick = async () => {
+  const seq = ++actionSeq;
+  try { const fresh = await api("POST", "/api/stop"); if (seq !== actionSeq) return; state = fresh; $("msg").textContent = ""; render(); }
+  catch (e) { $("msg").textContent = e.message; }
+};
+
+let volTimer;
+$("vol").oninput = e => {
+  const v = +e.target.value;
+  $("volOut").textContent = v;
+  volBusy = Date.now() + 3000;
+  clearTimeout(volTimer);
+  volTimer = setTimeout(() => api("POST", "/api/volume", { volume: v })
+    .catch(err => { $("msg").textContent = err.message; }), 120);
+};
+
+$("powerBtn").onclick = async () => {
+  if (!confirm("Shut the Pi down?\n\nUse this before unplugging it. To turn it back on you will need to unplug it and plug it in again.")) return;
+  try {
+    await api("POST", "/api/poweroff");
+    $("play").hidden = true; $("off").hidden = false;
+  } catch (e) { $("msg").textContent = e.message; }
+};
+
+// Stop and Power off light up in the preset colour when pressed, then fade back.
+for (const id of ["stop", "powerBtn"]) {
+  const el = $(id);
+  let timer;
+  el.addEventListener("pointerdown", () => {
+    clearTimeout(timer);
+    el.classList.add("flash");
+    timer = setTimeout(() => el.classList.remove("flash"), 350);
+  });
+}
+
+/* ---- edit view ---- */
+function addRow(p = { name: "", url: "", nowplaying: "" }) {
+  const rows = $("rows");
+  if (rows.children.length >= MAX) return;
+  const row = document.createElement("div"); row.className = "row";
+  const top = document.createElement("div"); top.className = "top";
+  const name = document.createElement("input");
+  name.placeholder = "Name"; name.maxLength = 40; name.value = p.name; name.className = "name";
+  name.autocomplete = "off"; name.autocapitalize = "off"; name.spellcheck = false; name.setAttribute("autocorrect", "off");   // station names aren't words
+  const up = document.createElement("button"); up.className = "icon"; up.textContent = "↑"; up.title = "Move up";
+  up.onclick = () => { if (row.previousElementSibling) rows.insertBefore(row, row.previousElementSibling); };
+  const del = document.createElement("button"); del.className = "icon"; del.textContent = "✕"; del.title = "Remove";
+  del.onclick = () => { row.remove(); updateTools(); resetSave(); };
+  top.append(name, up, del);
+  const url = document.createElement("input");
+  url.placeholder = "https://… stream address"; url.value = p.url; url.className = "url";
+  url.inputMode = "url"; url.autocapitalize = "off"; url.autocomplete = "off"; url.spellcheck = false; url.setAttribute("autocorrect", "off");
+  const np = document.createElement("input");
+  np.placeholder = "Now-playing feed address (optional)"; np.value = p.nowplaying || ""; np.className = "np";
+  np.inputMode = "url"; np.autocapitalize = "off"; np.autocomplete = "off"; np.spellcheck = false; np.setAttribute("autocorrect", "off");
+  const note = document.createElement("div"); note.className = "note"; note.hidden = true;
+  row.append(top, url, np, note);
+  row.dataset.checked = p.url || "";     // addresses already saved are not re-checked
+  url.addEventListener("input", () => { note.hidden = true; resetSave(); });
+  rows.append(row);
+  updateTools();
+  return row;
+}
+
+function updateTools() {
+  const full = $("rows").children.length >= MAX;
+  $("addBtn").hidden = full;
+  $("findBtn").hidden = full;
+  if (full) $("find").hidden = true;
+  $("sortBtn").hidden = $("rows").children.length < 2;
+}
+
+// The dial position in a station's name: "WXRV 92.5" -> 92.5, "WBZ 1030 AM" -> 1030.
+// Returns null when the name has none ("ICI Musique", "BBC Radio 4", "Hits 80s").
+function frequencyOf(name) {
+  for (const m of name.matchAll(/(?<![\w.,])(\d{2,4}(?:[.,]\d{1,2})?)(?![\w])/g)) {
+    const v = parseFloat(m[1].replace(",", "."));
+    if ((v >= 76 && v <= 108) || (v >= 150 && v <= 1710 && Number.isInteger(v))) return v;
+  }
+  return null;
+}
+
+$("sortBtn").onclick = () => {
+  const rows = [...$("rows").children].map((row, i) => {
+    const name = row.querySelector(".name").value.trim();
+    return { row, i, name, f: frequencyOf(name) };
+  });
+  rows.sort((a, b) =>
+    (a.f === null) - (b.f === null) ||                       // stations with no number go last
+    (a.f !== null ? a.f - b.f : a.name.localeCompare(b.name, undefined, { sensitivity: "base" })) ||
+    a.i - b.i);
+  const changed = rows.some((r, i) => r.i !== i);
+  rows.forEach(r => $("rows").append(r.row));
+  resetSave();
+  $("editMsg").textContent = changed ? "Sorted. Tap Save to keep this order." : "Already in order.";
+};
+
+function showNote(row, result) {
+  const note = row.querySelector(".note");
+  note.className = "note " + result.level; note.textContent = result.message; note.hidden = false;
+  if (result.suggestion) {
+    const use = document.createElement("button"); use.className = "small"; use.textContent = "Use it";
+    use.onclick = () => {
+      row.querySelector(".url").value = result.suggestion;
+      row.dataset.checked = result.suggestion;
+      showNote(row, { level: "ok", message: "Switched to the continuous address." });
+      resetSave();
+    };
+    note.append(use);
+  }
+}
+
+let saveAnyway = false;
+function resetSave() { saveAnyway = false; $("saveBtn").textContent = "Save"; $("editMsg").textContent = ""; }
+
+// Check every new or changed address. Returns true when it is fine to save.
+async function checkRows() {
+  const rows = [...$("rows").children].filter(r => {
+    const u = r.querySelector(".url").value.trim();
+    return u && u !== r.dataset.checked;
+  });
+  if (!rows.length) return true;
+  $("editMsg").textContent = "Checking the address" + (rows.length > 1 ? "es" : "") + "\u2026";
+  let problems = 0;
+  await Promise.all(rows.map(async r => {
+    const u = r.querySelector(".url").value.trim();
+    let result;
+    try { result = await api("POST", "/api/check", { url: u }); }
+    catch (e) { result = { level: "warn", message: "Couldn't check this address: " + e.message }; }
+    if (result.level === "ok") { r.dataset.checked = u; r.querySelector(".note").hidden = true; }
+    else { problems++; showNote(r, result); }
+  }));
+  $("editMsg").textContent = "";
+  return problems === 0;
+}
+
+/* ---- find a station ---- */
+async function findStations() {
+  const q = $("findQ").value.trim();
+  const box = $("findResults"); box.textContent = "";
+  if (q.length < 2) { $("findMsg").textContent = "Type at least two letters of the station's name."; return; }
+  $("findMsg").textContent = "Searching\u2026";
+  try {
+    const data = await api("GET", "/api/search?q=" + encodeURIComponent(q));
+    if (!data.results.length) { $("findMsg").textContent = "Not in the directory. Many local stations aren\u2019t listed. Try a shorter name or the call letters; otherwise find the address on the station\u2019s own web player (the README explains how) and add it with + Add preset."; return; }
+    $("findMsg").textContent = (data.used ? "Nothing matched that exactly, so this is a search for \u201c" + data.used + "\u201d. " : "") + "Tap a result to add it as a preset.";
+    data.results.forEach(s => {
+      const b = document.createElement("button"); b.className = "result";
+      b.append(document.createTextNode(s.name));
+      const d = document.createElement("small");
+      d.textContent = [s.where, s.detail, s.hls ? "chunked (may reconnect often)" : ""].filter(Boolean).join(" \u00b7 ");
+      b.append(d);
+      b.onclick = () => {
+        const row = addRow({ name: s.name.slice(0, 40), url: s.url, nowplaying: "" });
+        if (!row) return;
+        row.dataset.checked = "";            // gets checked on Save
+        $("find").hidden = true; resetSave();
+        row.scrollIntoView({ behavior: "smooth", block: "center" });
+      };
+      box.append(b);
+    });
+  } catch (e) { $("findMsg").textContent = e.message; }
+}
+$("findBtn").onclick = () => { $("find").hidden = !$("find").hidden; if (!$("find").hidden) $("findQ").focus(); };
+$("findGo").onclick = findStations;
+$("findQ").addEventListener("keydown", e => { if (e.key === "Enter") findStations(); });
+
+$("editBtn").onclick = () => {
+  $("rows").textContent = ""; resetSave();
+  $("find").hidden = true; $("findResults").textContent = ""; $("findQ").value = "";
+  state.presets.forEach(p => addRow(p));
+  updateTools();
+  $("play").hidden = true; $("edit").hidden = false;
+};
+$("addBtn").onclick = () => addRow();
+function closeEdit() { $("edit").hidden = true; $("play").hidden = false; actionSeq++; refresh(); }
+$("cancelBtn").onclick = closeEdit;
+$("saveBtn").onclick = async () => {
+  const presets = [...$("rows").children].map(r => ({
+    name: r.querySelector(".name").value.trim(),
+    url: r.querySelector(".url").value.trim(),
+    nowplaying: r.querySelector(".np").value.trim(),
+  })).filter(p => p.name || p.url);
+  if (!saveAnyway) {
+    $("saveBtn").disabled = true;
+    const fine = await checkRows();
+    $("saveBtn").disabled = false;
+    if (!fine) {
+      saveAnyway = true; $("saveBtn").textContent = "Save anyway";
+      $("editMsg").textContent = "Some addresses may not work; see the notes above. Fix them, or tap Save anyway.";
+      return;
+    }
+  }
+  try { await api("PUT", "/api/presets", presets); resetSave(); closeEdit(); }
+  catch (e) { $("editMsg").textContent = e.message; }
+};
+
+refresh();
+setInterval(refresh, 5000);
+document.addEventListener("visibilitychange", () => { if (!document.hidden) refresh(); });
+</script>
+</body>
+</html>

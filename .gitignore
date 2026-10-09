@@ -1,0 +1,4 @@
+__pycache__/
+*.pyc
+# Your own stations, used by install.sh in place of the examples
+presets.local.json
