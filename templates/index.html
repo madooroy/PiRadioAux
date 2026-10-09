@@ -117,6 +117,10 @@
     overscroll-behavior: contain; padding: 2px 0 12px;
     border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); padding-top: 12px;
   }
+  /* No scrollbar: on a computer it showed as a white strip and pushed the
+     presets out of line with the buttons below. Wheel, touch and keys still scroll. */
+  #play.many #scroll { scrollbar-width: none; }
+  #play.many #scroll::-webkit-scrollbar { display: none; }
   /* Stop Playing and Power off: one row, each as wide as a preset button. */
   .btns { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 12px; }
   .btns #stop { width: auto; margin-top: 0; }
