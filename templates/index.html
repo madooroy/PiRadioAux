@@ -233,6 +233,10 @@ function render() {
     setText("nowLabel", "Now playing");
     setText("nowStation", state.current !== null ? state.presets[state.current].name : "Radio");
     setText("nowTitle", state.recovering ? (state.connecting ? "Trying to connect\u2026" : "Reconnecting\u2026") : (state.title || "---"));
+  } else if (state.spotify) {      // Spotify Connect has the speaker
+    setText("nowLabel", state.spotify.state === "paused" ? "Paused" : "Now playing");
+    setText("nowStation", "Spotify");
+    setText("nowTitle", state.spotify.title || "---");
   } else {
     setText("nowLabel", "Radio");
     setText("nowStation", "Off");

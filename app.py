@@ -394,8 +394,37 @@ def search_stations(query):
     return results[:15]
 
 
+# What Spotify Connect on this Pi is doing, as reported by its event hook.
+_spotify = {"state": "", "title": "", "at": 0.0}   # state: "playing", "paused" or ""
+SPOTIFY_PAUSE_KEEP = 30 * 60   # stop showing a paused session after this long
+
+
+def spotify_event(event, name="", artists="", show=""):
+    """Record one event from Spotify Connect. Returns the resulting state."""
+    now = time.time()
+    if event == "track_changed":
+        who = ", ".join(a.strip() for a in artists.splitlines() if a.strip()) or show.strip()
+        _spotify["title"] = " \u2013 ".join(x for x in (who, name.strip()) if x)[:200]
+    elif event in ("playing", "started"):
+        _spotify.update(state="playing", at=now)
+    elif event == "paused":
+        _spotify.update(state="paused", at=now)
+    elif event in ("stopped", "session_disconnected", "unavailable"):
+        _spotify.update(state="", title="", at=now)
+    return _spotify["state"]
+
+
+def spotify_status():
+    """What to show for Spotify, or None when it isn't in use."""
+    state = _spotify["state"]
+    if state == "paused" and time.time() - _spotify["at"] > SPOTIFY_PAUSE_KEEP:
+        state = ""
+    return {"state": state, "title": _spotify["title"]} if state else None
+
+
 def stop_spotify():
     """End any Spotify session without holding up the page."""
+    _spotify.update(state="", title="", at=time.time())
     if not SPOTIFY_STOP_CMD:
         return
     try:
@@ -449,6 +478,7 @@ def current_status():
         "volume": volume,
         "error": status.get("error", ""),
         "notice": _notice,
+        "spotify": None if playing else spotify_status(),
         "presets": presets,
     }
 
@@ -531,6 +561,25 @@ def api_yield():
     with mpd() as client:
         client.stop()
     return jsonify(ok=True)
+
+
+@app.post("/api/spotify")
+def api_spotify():
+    """Called by the Spotify Connect event hook on this Pi; not for other machines."""
+    if request.remote_addr not in ("127.0.0.1", "::1"):
+        return jsonify(error="Local use only."), 403
+    form = request.form
+    event = form.get("event", "")[:40]
+    state = spotify_event(event, form.get("name", "")[:200], form.get("artists", "")[:400], form.get("show", "")[:200])
+    if event in ("playing", "started"):
+        # Spotify has the speaker now: stop the radio and stop keeping it alive.
+        want(None)
+        try:
+            with mpd() as client:
+                client.stop()
+        except Exception:
+            pass
+    return jsonify(ok=True, state=state)
 
 
 @app.post("/api/volume")
