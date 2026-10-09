@@ -45,6 +45,12 @@
   #heart:disabled svg { opacity: .3; }
   #heart:not(:disabled):active { transform: scale(.9); }
   header .links { display: flex; gap: 16px; }
+  #favTools { display: flex; gap: 8px; margin-bottom: 10px; }
+  #favTools input, #favTools select { font: inherit; font-size: 16px; color: var(--ink); background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 9px 10px; }
+  #favTools input { flex: 1; min-width: 0; -webkit-appearance: none; appearance: none; }
+  #favTools input::-webkit-search-cancel-button, #favTools input::-webkit-search-decoration { -webkit-appearance: none; display: none; }
+  #favTools select { flex: none; max-width: 45%; }
+  #favCount { margin: 0 0 8px; }
   .fav { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 12px 12px 10px 14px; margin-bottom: 10px; display: flex; gap: 10px; align-items: flex-start; }
   .fav .what { flex: 1; min-width: 0; }
   .fav .song { font-weight: 600; overflow-wrap: anywhere; }
@@ -187,6 +193,16 @@
   <section id="favs" hidden>
     <header><h1>Favorites</h1><button class="link" id="favsDone">Done</button></header>
     <p class="hint">Songs you saved with the heart. &ldquo;Find in Spotify&rdquo; opens a Spotify search for the song, where you can play it or add it to your Liked Songs.</p>
+    <div id="favTools" hidden>
+      <input id="favQ" type="search" placeholder="Filter by song, station or date" autocapitalize="off" autocomplete="off" autocorrect="off" spellcheck="false" enterkeyhint="search">
+      <select id="favSort" aria-label="Sort favorites">
+        <option value="new">Newest first</option>
+        <option value="old">Oldest first</option>
+        <option value="title">Song A&ndash;Z</option>
+        <option value="station">Station</option>
+      </select>
+    </div>
+    <div id="favCount" class="hint" hidden></div>
     <div id="favList"></div>
     <div id="favMsg" class="hint"></div>
   </section>
@@ -305,9 +321,41 @@ $("heart").onclick = async () => {
 };
 
 /* ---- favorites view ---- */
+let favAll = [];
+function favDate(f) { const d = f.at ? new Date(f.at) : null; return d && !isNaN(d) ? d : null; }
+// Everything a filter word may match: song, station, and the date written several ways
+// ("october 9 2026", "oct 9", "2026-10-09", "friday", "10/9/2026").
+function favHaystack(f) {
+  const d = favDate(f);
+  const dates = d ? [
+    d.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric", year: "numeric" }),
+    d.toLocaleDateString(undefined, { month: "short", day: "numeric" }),
+    d.toLocaleDateString(),
+    d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"),
+  ] : [];
+  return [f.title, f.station || "", ...dates].join(" ").toLowerCase();
+}
 function showFavorites(list) {
+  favAll = list;
+  $("favTools").hidden = list.length < 2;
+  drawFavorites();
+}
+function drawFavorites() {
   const box = $("favList"); box.textContent = "";
-  $("favMsg").textContent = list.length ? "" : "Nothing saved yet. While a song is playing, tap the heart beside its name.";
+  const words = $("favTools").hidden ? [] : $("favQ").value.toLowerCase().split(/\s+/).filter(Boolean);
+  const sort = $("favTools").hidden ? "new" : $("favSort").value;
+  const time = f => { const d = favDate(f); return d ? d.getTime() : 0; };
+  const text = (a, b) => a.localeCompare(b, undefined, { sensitivity: "base" });
+  const list = favAll.filter(f => { const h = favHaystack(f); return words.every(w => h.includes(w)); });
+  list.sort((a, b) =>
+    sort === "old" ? time(a) - time(b) :
+    sort === "title" ? text(a.title, b.title) :
+    sort === "station" ? text(a.station || "", b.station || "") || time(b) - time(a) :
+    time(b) - time(a));
+  $("favMsg").textContent = !favAll.length ? "Nothing saved yet. While a song is playing, tap the heart beside its name."
+    : !list.length ? "No saved song matches that." : "";
+  $("favCount").hidden = !words.length || !list.length;
+  $("favCount").textContent = "Showing " + list.length + " of " + favAll.length;
   list.forEach(f => {
     const row = document.createElement("div"); row.className = "fav";
     const what = document.createElement("div"); what.className = "what";
@@ -328,7 +376,12 @@ function showFavorites(list) {
     row.append(what, del); box.append(row);
   });
 }
+$("favQ").addEventListener("input", drawFavorites);
+$("favSort").onchange = () => { try { localStorage.setItem("favSort", $("favSort").value); } catch (e) {} drawFavorites(); };
+try { const saved = localStorage.getItem("favSort"); if (saved) $("favSort").value = saved; } catch (e) {}
+if (!$("favSort").value) $("favSort").value = "new";
 $("favsBtn").onclick = async () => {
+  $("favQ").value = ""; $("favTools").hidden = true; $("favCount").hidden = true;
   $("play").hidden = true; $("favs").hidden = false; $("favList").textContent = ""; $("favMsg").textContent = "Loading\u2026";
   try { showFavorites((await api("GET", "/api/favorites")).favorites); }
   catch (e) { $("favMsg").textContent = e.message; }
