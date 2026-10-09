@@ -24,6 +24,9 @@ from mpd import MPDClient
 
 BASE = Path(__file__).resolve().parent
 PRESETS_FILE = Path(os.environ.get("PIRADIO_PRESETS", BASE / "presets.json"))
+# Songs saved with the heart on the page.
+FAVORITES_FILE = Path(os.environ.get("PIRADIO_FAVORITES", PRESETS_FILE.with_name("favorites.json")))
+MAX_FAVORITES = 500
 MPD_HOST = os.environ.get("MPD_HOST", "localhost")
 MPD_PORT = int(os.environ.get("MPD_PORT", "6600"))
 # Command that ends any Spotify session so the radio can take over.
@@ -85,6 +88,29 @@ def save_presets(presets):
     tmp = PRESETS_FILE.with_suffix(".tmp")
     tmp.write_text(json.dumps(presets, indent=2) + "\n")
     tmp.replace(PRESETS_FILE)
+
+
+def load_favorites():
+    try:
+        data = json.loads(FAVORITES_FILE.read_text())
+        return [f for f in data if isinstance(f, dict) and f.get("title")]
+    except (OSError, ValueError):
+        return []
+
+
+def save_favorites(favorites):
+    tmp = FAVORITES_FILE.with_suffix(".tmp")
+    tmp.write_text(json.dumps(favorites, indent=2, ensure_ascii=False) + "\n")
+    tmp.replace(FAVORITES_FILE)
+
+
+def _fav_key(title):
+    return " ".join(str(title).lower().split())
+
+
+def is_favorite(title):
+    key = _fav_key(title)
+    return bool(key) and any(_fav_key(f["title"]) == key for f in load_favorites())
 
 
 def clean_presets(data):
@@ -467,6 +493,7 @@ def current_status():
         volume = int(status.get("volume", -1))
     except ValueError:
         volume = -1
+    spotify = None if playing else spotify_status()
     return {
         "playing": playing,
         "current": current,
@@ -478,7 +505,8 @@ def current_status():
         "volume": volume,
         "error": status.get("error", ""),
         "notice": _notice,
-        "spotify": None if playing else spotify_status(),
+        "spotify": spotify,
+        "liked": is_favorite(title or (spotify or {}).get("title", "")),   # is the song showing a saved favorite?
         "presets": presets,
     }
 
@@ -636,6 +664,36 @@ def api_check():
     if not url:
         raise BadRequest("No address to check.")
     return jsonify(check_address(url))
+
+
+@app.get("/api/favorites")
+def api_favorites():
+    return jsonify(favorites=load_favorites())
+
+
+@app.post("/api/favorites")
+def api_favorites_add():
+    """Save the song showing on the page. Saving the same song again keeps one copy."""
+    data = request.get_json(silent=True) or {}
+    title = " ".join(str(data.get("title", "")).split())[:200]
+    station = " ".join(str(data.get("station", "")).split())[:60]
+    if not title or title == "---":
+        raise BadRequest("There is no song title to save right now.")
+    with _lock:
+        favorites = load_favorites()
+        if not any(_fav_key(f["title"]) == _fav_key(title) for f in favorites):   # already saved: leave it be
+            favorites.insert(0, {"title": title, "station": station,
+                                 "at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")})
+            save_favorites(favorites[:MAX_FAVORITES])
+    return jsonify(favorites=load_favorites())
+
+
+@app.delete("/api/favorites")
+def api_favorites_remove():
+    title = str((request.get_json(silent=True) or {}).get("title", ""))
+    with _lock:
+        save_favorites([f for f in load_favorites() if _fav_key(f["title"]) != _fav_key(title)])
+    return jsonify(favorites=load_favorites())
 
 
 @app.get("/api/presets/export")

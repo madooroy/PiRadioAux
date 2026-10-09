@@ -36,6 +36,20 @@
     background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
     padding: 14px 16px; min-height: 76px; margin-bottom: 16px;
   }
+  #now { display: flex; align-items: center; gap: 10px; }
+  #now .text { flex: 1; min-width: 0; }
+  #heart { flex: none; width: 44px; height: 44px; border: 0; background: none; padding: 0; cursor: pointer; display: grid; place-items: center; border-radius: 50%; }
+  #heart svg { fill: none; stroke: var(--muted); stroke-width: 1.7; stroke-linejoin: round; transition: fill .15s, stroke .15s; }
+  #heart[aria-pressed="true"] svg { fill: var(--accent); stroke: var(--accent); }
+  #heart:disabled { cursor: default; }
+  #heart:disabled svg { opacity: .3; }
+  #heart:not(:disabled):active { transform: scale(.9); }
+  header .links { display: flex; gap: 16px; }
+  .fav { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 12px 12px 10px 14px; margin-bottom: 10px; display: flex; gap: 10px; align-items: flex-start; }
+  .fav .what { flex: 1; min-width: 0; }
+  .fav .song { font-weight: 600; overflow-wrap: anywhere; }
+  .fav small { display: block; color: var(--muted); font-size: 13px; margin-top: 2px; }
+  .fav a { display: inline-block; margin-top: 6px; color: var(--accent); font-size: 14px; text-decoration: none; }
   #now .label { font-size: 12px; text-transform: uppercase; letter-spacing: .09em; color: var(--muted); }
   #now .station { font-size: 20px; font-weight: 600; margin-top: 2px; }
   #now .title { min-height: 1.4em; font-size: 14px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -136,11 +150,16 @@
 <body>
 <main>
   <section id="play">
-    <header><h1>{{ name }}</h1><button class="link" id="editBtn">Edit presets</button></header>
+    <header><h1>{{ name }}</h1><span class="links"><button class="link" id="favsBtn">Favorites</button><button class="link" id="editBtn">Edit presets</button></span></header>
     <div id="now">
-      <div class="label" id="nowLabel">Radio</div>
-      <div class="station" id="nowStation">Off</div>
-      <div class="title" id="nowTitle">---</div>
+      <div class="text">
+        <div class="label" id="nowLabel">Radio</div>
+        <div class="station" id="nowStation">Off</div>
+        <div class="title" id="nowTitle">---</div>
+      </div>
+      <button id="heart" aria-label="Save this song to Favorites" aria-pressed="false" disabled>
+        <svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true"><path d="M12 20.5s-7.5-4.6-7.5-10.1A4.4 4.4 0 0 1 12 7.6a4.4 4.4 0 0 1 7.5 2.8c0 5.5-7.5 10.1-7.5 10.1z"/></svg>
+      </button>
     </div>
     <div id="scroll">
       <div id="presets"></div>
@@ -163,6 +182,13 @@
     <h1>Shutting down</h1>
     <p>Wait until the Pi's green light stops flickering and stays off (about 30 seconds), then unplug it.</p>
     <p>To start it again, plug it back in.</p>
+  </section>
+
+  <section id="favs" hidden>
+    <header><h1>Favorites</h1><button class="link" id="favsDone">Done</button></header>
+    <p class="hint">Songs you saved with the heart. &ldquo;Find in Spotify&rdquo; opens a Spotify search for the song, where you can play it or add it to your Liked Songs.</p>
+    <div id="favList"></div>
+    <div id="favMsg" class="hint"></div>
   </section>
 
   <section id="edit" hidden>
@@ -249,13 +275,68 @@ function render() {
     setText("nowStation", "Off");
     setText("nowTitle", "---");
   }
+  const song = songShowing();
+  $("heart").disabled = !song;
+  $("heart").setAttribute("aria-pressed", song && state.liked ? "true" : "false");
+  $("heart").setAttribute("aria-label", song && state.liked ? "Remove this song from Favorites" : "Save this song to Favorites");
   if (state.volume >= 0 && Date.now() > volBusy) {
     $("vol").value = state.volume; $("volOut").textContent = state.volume;
   }
 }
 
+// The song on screen right now, or "" when there is none to save.
+function songShowing() {
+  if (state.playing) return state.recovering ? "" : (state.title || "");
+  return state.spotify ? (state.spotify.title || "") : "";
+}
+function stationShowing() {
+  if (state.playing) return state.current !== null && state.presets[state.current] ? state.presets[state.current].name : "Radio";
+  return state.spotify ? "Spotify" : "";
+}
+
+$("heart").onclick = async () => {
+  const title = songShowing();
+  if (!title) return;
+  const was = !!state.liked;
+  state.liked = !was; render();
+  try {
+    await api(was ? "DELETE" : "POST", "/api/favorites", { title, station: stationShowing() });
+  } catch (e) { state.liked = was; render(); $("msg").textContent = e.message; }
+};
+
+/* ---- favorites view ---- */
+function showFavorites(list) {
+  const box = $("favList"); box.textContent = "";
+  $("favMsg").textContent = list.length ? "" : "Nothing saved yet. While a song is playing, tap the heart beside its name.";
+  list.forEach(f => {
+    const row = document.createElement("div"); row.className = "fav";
+    const what = document.createElement("div"); what.className = "what";
+    const song = document.createElement("div"); song.className = "song"; song.textContent = f.title;
+    const when = f.at ? new Date(f.at) : null;
+    const meta = document.createElement("small");
+    meta.textContent = [f.station, when && !isNaN(when) ? when.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }) : ""].filter(Boolean).join(" \u00b7 ");
+    const link = document.createElement("a");
+    // "Artist \u2013 Song" or "Artist - Song" -> plain words for the search
+    link.href = "https://open.spotify.com/search/" + encodeURIComponent(f.title.replace(/\s[\u2013\u2014-]\s/g, " "));
+    link.target = "_blank"; link.rel = "noopener"; link.textContent = "Find in Spotify";
+    what.append(song, meta, link);
+    const del = document.createElement("button"); del.className = "icon"; del.textContent = "\u2715"; del.title = "Remove";
+    del.onclick = async () => {
+      try { showFavorites((await api("DELETE", "/api/favorites", { title: f.title })).favorites); }
+      catch (e) { $("favMsg").textContent = e.message; }
+    };
+    row.append(what, del); box.append(row);
+  });
+}
+$("favsBtn").onclick = async () => {
+  $("play").hidden = true; $("favs").hidden = false; $("favList").textContent = ""; $("favMsg").textContent = "Loading\u2026";
+  try { showFavorites((await api("GET", "/api/favorites")).favorites); }
+  catch (e) { $("favMsg").textContent = e.message; }
+};
+$("favsDone").onclick = () => { $("favs").hidden = true; $("play").hidden = false; actionSeq++; refresh(); };
+
 async function refresh() {
-  if (!$("edit").hidden || !$("off").hidden) return;
+  if (!$("edit").hidden || !$("off").hidden || !$("favs").hidden) return;
   const seq = actionSeq;
   try {
     const fresh = await api("GET", "/api/status");
