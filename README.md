@@ -15,7 +15,7 @@ A Raspberry Pi that turns any radio, speaker, or amplifier with an aux input int
 
 It works with any radio, speaker, or amplifier that has an aux or line input. How good it sounds depends on the audio adapter between the Pi and the cable; an inexpensive USB adapter is already well ahead of the Pi's built-in headphone jack.
 
-**What has and hasn't been tested:** everything here has been run on one Raspberry Pi 4 using its built-in headphone jack: the install, radio presets, Spotify Connect and the handover with radio, the song display, automatic reconnection, station search and the address check, the nightly update check, `--fast-boot`, and the Power off button. Not yet tested: a USB audio adapter and its shared audio mode, any other Pi model, an update that actually installs something, and the automatic 3 AM restart. The troubleshooting section covers the places most likely to need a tweak.
+**What has and hasn't been tested:** everything here has been run on one Raspberry Pi 4 using its built-in headphone jack: the install, radio presets, Spotify Connect and the handover with radio, the song display, automatic reconnection, station search and the address check, the nightly update check, most of `--fast-boot` (its firmware and bootloader settings and `--undo-fast-boot` have only been run against copies of the files), and the Power off button. Not yet tested: a USB audio adapter and its shared audio mode, any other Pi model, an update that actually installs something, and the automatic 3 AM restart. The troubleshooting section covers the places most likely to need a tweak.
 
 ## What you need
 
@@ -204,17 +204,31 @@ sudo bash install.sh --fast-boot
 sudo reboot
 ```
 
-On the Pi 4 used for testing this brought the time from power-on to a working page down from about 20 seconds to about 14. It makes three changes, all for a Pi with no screen attached:
+On the Pi 4 used for testing, the cloud-init, network-cable and detection changes brought the time from the start of Linux to a working page down from about 20 seconds to about 14. The firmware and bootloader changes act before Linux starts, so that figure does not include them; they have not been timed on this project. To see the whole gain yourself, time from plugging in the power to the page loading, before and after.
 
-| Change | Why | To undo |
+What it changes, all for a Pi with no screen attached:
+
+| Where | Change | Why |
 |---|---|---|
-| Switches off cloud-init | It applies the Raspberry Pi Imager settings on the very first start, then costs about 2 seconds on every later one | Delete the word `cloud-init=disabled` from `/boot/firmware/cmdline.txt` |
-| Waits 3 seconds, not 6, for a network cable | The Pi otherwise waits the full 6 seconds on an empty wired socket even when Wi-Fi is already connected | `sudo rm /etc/NetworkManager/conf.d/10-piradio-eth0.conf` |
-| Stops looking for a camera and a display | Nothing is attached | Set `camera_auto_detect` and `display_auto_detect` back to `1` in `/boot/firmware/config.txt` |
+| `/boot/firmware/cmdline.txt` | Adds `cloud-init=disabled` | cloud-init applies the Raspberry Pi Imager settings on the very first start, then costs about 2 seconds on every later one |
+| NetworkManager | Waits 3 seconds, not 6, for a network cable | The Pi otherwise waits the full 6 seconds on an empty wired socket even when Wi-Fi is already connected |
+| `/boot/firmware/config.txt` | `camera_auto_detect=0`, `display_auto_detect=0`, `boot_delay=0`, `disable_splash=1` | No looking for a camera or display, no firmware pause, no splash screen |
+| `/boot/firmware/config.txt` | `auto_initramfs=0`, only when the Pi starts from an SD card | The initramfs is not needed to start from a card |
+| Bootloader (Pi 4 only) | `NET_INSTALL_AT_POWER_ON=0` | No pause at power-on waiting for a keyboard. This is stored on the Pi's board, not on the card |
 
-The installer keeps the original files beside the changed ones as `cmdline.txt.piradio-bak` and `config.txt.piradio-bak`. Both are on the card's small boot partition, which a Windows or Mac computer can open, so if the Pi ever fails to come back you can put the card in a computer and restore them.
+To put everything back:
 
-Run it only after the Pi has started at least once and is on your Wi-Fi, which is always the case by the time you can run the installer.
+```
+sudo bash install.sh --undo-fast-boot
+sudo reboot
+```
+
+Things to know:
+
+- **Run it only after the Pi has started once and is on your Wi-Fi.** That is always the case by the time you can run the installer.
+- **A camera or DSI display added later** would not be detected until you undo.
+- **The undo restores `config.txt` as it was before the first `--fast-boot`**, so any other change you made to that file since then is lost.
+- **If the Pi does not come back afterwards:** the installer keeps the original files beside the changed ones as `config.txt.piradio-bak` and `cmdline.txt.piradio-bak`. Both are on the card's small boot partition, which a Windows or Mac computer can open. Put the card in a computer, copy `config.txt.piradio-bak` over `config.txt`, and delete the words `cloud-init=disabled` from the end of `cmdline.txt`.
 
 ## Troubleshooting
 
