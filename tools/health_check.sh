@@ -184,7 +184,13 @@ log=/var/log/unattended-upgrades/unattended-upgrades.log
 if [[ -f $log ]]; then
     last=$(grep -E 'Packages that will be upgraded|No packages found that can be upgraded|All upgrades installed' "$log" | tail -n 1)
     [[ -n $last ]] && info "last run: ${last:0:150}"
-    grep -q ERROR "$log" && warn "the update log contains errors - see: grep ERROR $log | tail"
+    # Only errors since the last run that finished count: an old one (often "Lock could
+    # not be acquired", from an update starting while something else was installing)
+    # is history once a later run has succeeded.
+    recent=$(awk '/Packages that will be upgraded|No packages found that can be upgraded|All upgrades installed/ {buf=""; next} {buf = buf $0 "\n"} END {printf "%s", buf}' "$log" | grep ERROR | tail -n 2)
+    if [[ -n $recent ]]; then
+        warn "the last update run reported a problem:"; info "${recent:0:300}"
+    fi
 else
     info "no update has run yet"
 fi
