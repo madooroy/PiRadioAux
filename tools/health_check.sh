@@ -229,7 +229,11 @@ else
     info "--fast-boot is not applied (optional, see the README)"
 fi
 ready=$(journalctl -u piradio -b -o short-monotonic --no-pager 2>/dev/null | sed -n 's/^\[ *\([0-9.]*\)\].*Started piradio.*/\1/p' | head -n 1)
-[[ -n $ready ]] && info "the preset page started ${ready%.*} s after Linux did (this boot)"
+# Only meaningful when the page came up as part of start-up. After an install or an
+# update in the same session, the service's first start is minutes in and says nothing.
+if [[ -n $ready && ${ready%.*} -lt 120 ]]; then
+    info "the preset page started ${ready%.*} s after Linux did (this boot)"
+fi
 
 section "SD card and system"
 root_dev=$(findmnt -no SOURCE /)
