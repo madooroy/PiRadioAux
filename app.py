@@ -287,12 +287,18 @@ def clear_stale_error():
 
 
 def watchdog_loop():
-    tidied = False
+    # Clear a leftover start-up error straight away, so the page never shows it,
+    # and twice more in case the player was still failing when this began.
+    tidy_left = 3
     while True:
+        try:
+            if tidy_left:
+                clear_stale_error()
+                tidy_left -= 1
+        except Exception:
+            pass
         time.sleep(WATCH_INTERVAL)
         try:
-            if not tidied:
-                tidied = clear_stale_error()
             watchdog_tick()
         except Exception as exc:  # MPD briefly away (an update, say): try again next time
             app.logger.warning("watchdog: %s", exc)
