@@ -4,7 +4,7 @@ A Raspberry Pi that turns any radio, speaker, or amplifier with an aux input int
 
 - **Presets** for internet radio stations, with a station search and a check that an address really works.
 - **Spotify Connect**: the Pi shows up as a speaker in the Spotify app (needs Spotify Premium).
-- **Artist and song** shown when the station provides them.
+- **Artist and song** shown when the station provides them, with a heart to save the ones you like.
 - **Keeps itself running**: restarts a station whose stream drops, installs updates overnight, and starts by itself after a power cut.
 
 **Why the aux input.** The Pi connects to the radio by cable for three reasons:
@@ -15,7 +15,9 @@ A Raspberry Pi that turns any radio, speaker, or amplifier with an aux input int
 
 It works with any radio, speaker, or amplifier that has an aux or line input. How good it sounds depends on the audio adapter between the Pi and the cable; an inexpensive USB adapter is already well ahead of the Pi's built-in headphone jack.
 
-**What has and hasn't been tested:** everything here has been run on one Raspberry Pi 4 using its built-in headphone jack: the install, radio presets, Spotify Connect and the handover with radio, the song display, automatic reconnection, station search and the address check, the nightly update check, most of `--fast-boot` (its firmware and bootloader settings and `--undo-fast-boot` have only been run against copies of the files), and the Power off button. Not yet tested: a USB audio adapter and its shared audio mode, any other Pi model, an update that actually installs something, and the automatic 3 AM restart. The troubleshooting section covers the places most likely to need a tweak.
+> **Unofficial.** This project is not affiliated with or endorsed by Spotify, Tivoli Audio, the Raspberry Pi Foundation, Radio Browser, or any radio station. Station addresses and Spotify Connect can change or stop working at any time. Use it at your own risk.
+
+**What has and hasn't been tested:** everything here has been run on one Raspberry Pi 4 using its built-in headphone jack: the install, radio presets, Spotify Connect and the handover with radio, the song display, automatic reconnection, station search and the address check, the nightly update check, most of `--fast-boot` (its firmware and bootloader settings and `--undo-fast-boot` have only been run against copies of the files), and the Power off button. `tools/health_check.sh` and `tests/` are new and have not been run on a Pi. Not yet tested: a USB audio adapter and its shared audio mode, any other Pi model, an update that actually installs something, and the automatic 3 AM restart. The troubleshooting section covers the places most likely to need a tweak.
 
 ## What you need
 
@@ -232,7 +234,15 @@ Things to know:
 
 ## Troubleshooting
 
-Run these on the Pi after `ssh pi@piradio.local`.
+Start with the health check. On the Pi, after `ssh pi@piradio.local`:
+
+```
+sudo bash ~/PiRadioAux/tools/health_check.sh
+```
+
+It changes nothing. It prints one line per check, marked OK, WARN or FAIL, covering the three services, the installed files and presets, the page, the radio player, the audio output, Spotify Connect, automatic updates, the network, and the SD card and power supply. A FAIL line says what to do next. If you ask for help, include its output.
+
+For a specific problem:
 
 | Problem | Try |
 |---|---|
@@ -255,6 +265,8 @@ Run these on the Pi after `ssh pi@piradio.local`.
 | `presets.json` | The example presets a fresh install starts with |
 | `presets.local.json` | Optional: your own starting presets, used in place of the examples |
 | `update-pi.bat` | Windows helper that copies the folder to the Pi and installs |
+| `tools/health_check.sh` | Read-only check of the whole setup, see [Troubleshooting](#troubleshooting) |
+| `tests/` | Checks for the preset page that run without a Pi: `python3 tests/run_all.py` |
 | `LICENSE` | GNU General Public License, version 3 |
 | `install.sh` | Sets everything up on the Pi |
 | `config/asound-shared.conf` | Audio output with a software mixer, for the USB adapter |
@@ -264,6 +276,17 @@ Run these on the Pi after `ssh pi@piradio.local`.
 | `config/piradio.service` | Starts the preset page on boot |
 
 On the Pi the app lives in `/opt/piradio`, and its presets in `/opt/piradio/presets.json`.
+
+## Acknowledgements
+
+PiRadioAux is a small layer over other people's work:
+
+- [MPD](https://www.musicpd.org/) plays the radio streams.
+- [Raspotify](https://github.com/dtcooper/raspotify) and [librespot](https://github.com/librespot-org/librespot) provide Spotify Connect.
+- [Radio Browser](https://www.radio-browser.info/) is the community directory behind Find a station.
+- [Flask](https://flask.palletsprojects.com/), [Waitress](https://docs.pylonsproject.org/projects/waitress/) and [python-mpd2](https://github.com/Mic92/python-mpd2) run the preset page.
+
+If you want a full music player for the Pi, with a music library, AirPlay, Bluetooth and support for high-end audio boards, look at [moOde audio](https://moodeaudio.org/) or [Volumio](https://volumio.com/).
 
 ## License
 
