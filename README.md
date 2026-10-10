@@ -53,12 +53,17 @@ On a Pi with no headphone jack and no USB adapter, the installer stops with "No 
 
 1. Install **Raspberry Pi Imager** on your computer (raspberrypi.com/software).
 2. Choose your Pi model, then OS **Raspberry Pi OS (other) → Raspberry Pi OS Lite (64-bit)**.
-3. When asked to customise settings, set:
-   - Hostname: `piradio`
-   - A username and password (the examples below use `pi`)
-   - Your Wi-Fi name, password, and country
-   - Under Services, enable **SSH** with password login
-   - **Raspberry Pi Connect**: leave it off. It is Raspberry Pi's service for reaching a Pi from outside your home through their website, and needs a Raspberry Pi account. PiRadio does not use it; everything here works over your own Wi-Fi with SSH.
+3. The Imager then walks you through its customisation screens, one at a time. (Older versions show the same settings on a single page.)
+
+   | Screen | What to enter |
+   |---|---|
+   | **Hostname** | `piradio` |
+   | **Localisation** | Your country's capital, your time zone, and your keyboard layout. The time zone matters: the nightly update runs at 11 PM by the Pi's clock |
+   | **User** | A username and password (the examples below use `pi`). You will need both to connect later |
+   | **Wi-Fi** | Your network's name and password |
+   | **SSH** | Turn on **Enable SSH** and choose **Use password authentication** |
+   | **Raspberry Pi Connect** | Leave it off. It is Raspberry Pi's service for reaching a Pi from outside your home through their website, and needs a Raspberry Pi account. PiRadio does not use it; everything here works over your own Wi-Fi with SSH |
+
 4. Write the card.
 
 ## 2. Connect everything
