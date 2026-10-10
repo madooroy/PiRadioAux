@@ -322,3 +322,4 @@ fi
 echo
 echo "Done. \"$NAME\" is ready. On your phone (same Wi-Fi) open:  http://$(hostname).local"
 echo "If that name doesn't load, use:                              http://$(hostname -I | awk '{print $1}')"
+echo "To check the whole setup at any time:        sudo bash $HERE/tools/health_check.sh"

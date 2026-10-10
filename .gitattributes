@@ -1,0 +1,6 @@
+# Everything here runs on the Pi: always check out with Unix (LF) line endings,
+# even on Windows, so the shell scripts and service files keep working after a copy.
+* text=auto eol=lf
+# The Windows helper is the exception: batch files need Windows line endings.
+*.bat text eol=crlf
+*.png binary
