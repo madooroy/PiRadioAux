@@ -5,6 +5,7 @@
 #     --name "Kitchen Radio"   the name shown on the page and in Spotify (default: PiRadio)
 #     --hostname kitchenradio  also rename the Pi on the network (page becomes http://kitchenradio.local)
 #     --fast-boot              shorten start-up for a Pi with no screen (see the README)
+#     --undo-fast-boot         put the start-up settings back, and do nothing else
 # Safe to run again after changing files or swapping the audio adapter.
 set -euo pipefail
 
@@ -18,11 +19,13 @@ APP_DIR=/opt/piradio
 NAME=""
 NEW_HOST=""
 FAST_BOOT=0
+UNDO_FAST_BOOT=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --name)     NAME="${2:-}"; shift 2 ;;
     --hostname) NEW_HOST="${2:-}"; shift 2 ;;
     --fast-boot) FAST_BOOT=1; shift ;;
+    --undo-fast-boot) UNDO_FAST_BOOT=1; shift ;;
     *) echo "Unknown option: $1" >&2; exit 1 ;;
   esac
 done
@@ -38,6 +41,112 @@ fi
 if [ -n "$NEW_HOST" ] && ! printf '%s' "$NEW_HOST" | grep -Eq '^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$'; then
   echo "The hostname can use lowercase letters, numbers and dashes." >&2
   exit 1
+fi
+
+# ---- Start-up settings (--fast-boot / --undo-fast-boot) ----------------------
+# PIRADIO_BOOT_DIR and PIRADIO_NM_DIR let these be tried on copies of the files.
+BOOT="${PIRADIO_BOOT_DIR:-/boot/firmware}"
+NM_CONF="${PIRADIO_NM_DIR:-/etc/NetworkManager/conf.d}/10-piradio-eth0.conf"
+
+# The Pi 4's bootloader pauses at power-on in case a keyboard asks for a network
+# install. The setting lives on the board itself, not on the card.
+set_net_install() {
+  local value="$1" current tmp
+  [ -z "${PIRADIO_BOOT_DIR:-}" ] || return 0
+  if ! grep -q "Raspberry Pi 4" /proc/device-tree/model 2>/dev/null || ! command -v rpi-eeprom-config >/dev/null; then
+    echo "   Bootloader: skipped (not a Raspberry Pi 4, or rpi-eeprom-config is missing)"
+    return 0
+  fi
+  current="$(rpi-eeprom-config 2>/dev/null)" || { echo "   Bootloader: could not be read, left alone"; return 0; }
+  if printf '%s\n' "$current" | grep -q "^NET_INSTALL_AT_POWER_ON=$value\$"; then
+    echo "   Bootloader: NET_INSTALL_AT_POWER_ON=$value already set"
+    return 0
+  fi
+  tmp="$(mktemp)"
+  printf '%s\n' "$current" | grep -v '^NET_INSTALL_AT_POWER_ON=' > "$tmp" || true
+  echo "NET_INSTALL_AT_POWER_ON=$value" >> "$tmp"
+  if rpi-eeprom-config --apply "$tmp" >/dev/null 2>&1; then
+    echo "   Bootloader: NET_INSTALL_AT_POWER_ON=$value (written at the next restart)"
+  else
+    echo "   Bootloader: could not be changed, left alone"
+  fi
+  rm -f "$tmp"
+}
+
+fast_boot_apply() {
+  echo "== Shortening start-up (--fast-boot)"
+  # 1. cloud-init only applies the Raspberry Pi Imager settings on the very
+  #    first start, then costs a couple of seconds on every later one.
+  if [ -f "$BOOT/cmdline.txt" ]; then
+    if grep -qw 'cloud-init=disabled' "$BOOT/cmdline.txt"; then
+      echo "   cloud-init: already off"
+    else
+      [ -f "$BOOT/cmdline.txt.piradio-bak" ] || cp "$BOOT/cmdline.txt" "$BOOT/cmdline.txt.piradio-bak"
+      sed -i '1 s/[[:space:]]*$/ cloud-init=disabled/' "$BOOT/cmdline.txt"
+      echo "   cloud-init: switched off"
+    fi
+  fi
+  # 2. NetworkManager waits 6 seconds for a cable in the wired socket before it
+  #    calls the network ready, even when Wi-Fi is already connected.
+  if [ -d "$(dirname "$NM_CONF")" ]; then
+    printf '%s\n' '# PiRadio --fast-boot: wait 3 seconds, not 6, for a network cable at start-up.' \
+      '[device-piradio-eth0]' 'match-device=interface-name:eth0' 'carrier-wait-timeout=3000' > "$NM_CONF"
+    echo "   Wired-socket wait: 3 seconds"
+  fi
+  # 3. Firmware settings: no pause or splash screen, no looking for a camera or
+  #    display, and no initramfs when starting from an SD card (not needed there).
+  if [ -f "$BOOT/config.txt" ]; then
+    [ -f "$BOOT/config.txt.piradio-bak" ] || cp "$BOOT/config.txt" "$BOOT/config.txt.piradio-bak"
+    local settings="camera_auto_detect=0 display_auto_detect=0 boot_delay=0 disable_splash=1" setting key missing=""
+    case "${PIRADIO_ROOT_DEV:-$(findmnt -n -o SOURCE / 2>/dev/null)}" in
+      /dev/mmcblk*) settings="$settings auto_initramfs=0" ;;
+      *) echo "   Not starting from an SD card: the initramfs setting is left alone" ;;
+    esac
+    for setting in $settings; do
+      key="${setting%%=*}"
+      if grep -q "^$key=" "$BOOT/config.txt"; then
+        sed -i "s/^$key=.*/$setting/" "$BOOT/config.txt"
+      else
+        missing="$missing $setting"
+      fi
+    done
+    if [ -n "$missing" ]; then
+      # Under [all], so they apply whichever Pi model section the file ends in.
+      { echo; echo "# Faster start-up (PiRadio install.sh --fast-boot)"; echo "[all]"; printf '%s\n' $missing; } >> "$BOOT/config.txt"
+    fi
+    echo "   config.txt: $settings"
+  fi
+  # 4. Bootloader (Raspberry Pi 4).
+  set_net_install 0
+  echo "   The original files are kept beside the changed ones as *.piradio-bak."
+  echo "   These take effect at the next restart:  sudo reboot"
+}
+
+fast_boot_undo() {
+  echo "== Putting the start-up settings back (--undo-fast-boot)"
+  if [ -f "$BOOT/config.txt.piradio-bak" ]; then
+    cp "$BOOT/config.txt.piradio-bak" "$BOOT/config.txt"
+    echo "   config.txt: restored"
+  else
+    echo "   config.txt: no saved copy, left as it is"
+  fi
+  if [ -f "$BOOT/cmdline.txt" ] && grep -qw 'cloud-init=disabled' "$BOOT/cmdline.txt"; then
+    sed -i 's/[[:space:]]*cloud-init=disabled//g' "$BOOT/cmdline.txt"
+    echo "   cloud-init: switched back on"
+  else
+    echo "   cloud-init: was not switched off"
+  fi
+  if [ -f "$NM_CONF" ]; then
+    rm -f "$NM_CONF"
+    echo "   Wired-socket wait: back to the default"
+  fi
+  set_net_install 1
+  echo "Done. Restart to apply:  sudo reboot"
+}
+
+if [ "$UNDO_FAST_BOOT" = 1 ]; then
+  fast_boot_undo
+  exit 0
 fi
 
 # An earlier version of this project was called PiTivoli. Carry such an
@@ -193,42 +302,7 @@ systemctl enable piradio
 systemctl restart piradio
 
 if [ "$FAST_BOOT" = 1 ]; then
-  echo "== Shortening start-up (--fast-boot)"
-  BOOT=/boot/firmware
-  # 1. cloud-init only applies the Raspberry Pi Imager settings on the very
-  #    first start, then costs a couple of seconds on every later one.
-  if [ -f "$BOOT/cmdline.txt" ] && [ -d /etc/cloud ]; then
-    if grep -q 'cloud-init=disabled' "$BOOT/cmdline.txt"; then
-      echo "   cloud-init: already off"
-    else
-      cp "$BOOT/cmdline.txt" "$BOOT/cmdline.txt.piradio-bak"
-      sed -i '1 s/[[:space:]]*$/ cloud-init=disabled/' "$BOOT/cmdline.txt"
-      echo "   cloud-init: switched off (the old file is kept as cmdline.txt.piradio-bak)"
-    fi
-  else
-    echo "   cloud-init: not present, nothing to do"
-  fi
-  # 2. NetworkManager waits 6 seconds for a cable in the wired socket before it
-  #    calls the network ready, even when Wi-Fi is already connected.
-  if [ -d /etc/NetworkManager/conf.d ]; then
-    printf '%s\n' '# PiRadio --fast-boot: wait 3 seconds, not 6, for a network cable at start-up.' \
-      '[device-piradio-eth0]' 'match-device=interface-name:eth0' 'carrier-wait-timeout=3000' \
-      > /etc/NetworkManager/conf.d/10-piradio-eth0.conf
-    echo "   Wired-socket wait: 3 seconds"
-  fi
-  # 3. No screen or camera is attached, so skip looking for them.
-  if [ -f "$BOOT/config.txt" ]; then
-    [ -f "$BOOT/config.txt.piradio-bak" ] || cp "$BOOT/config.txt" "$BOOT/config.txt.piradio-bak"
-    for key in camera_auto_detect display_auto_detect; do
-      if grep -q "^$key=" "$BOOT/config.txt"; then
-        sed -i "s/^$key=.*/$key=0/" "$BOOT/config.txt"
-      else
-        printf '%s=0\n' "$key" >> "$BOOT/config.txt"
-      fi
-    done
-    echo "   Camera and display detection: off (the old file is kept as config.txt.piradio-bak)"
-  fi
-  echo "   These take effect at the next restart."
+  fast_boot_apply
 fi
 
 echo "== 6/6  Checking"
