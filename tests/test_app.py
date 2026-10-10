@@ -26,6 +26,7 @@ class Fake:
     def play(self, i): Fake.state = "play"
     def stop(self): Fake.state = "stop"
     def setvol(self, v): Fake.vol = v
+    def clearerror(self): Fake.calls.append(("clearerror",))
 
 
 @contextmanager
