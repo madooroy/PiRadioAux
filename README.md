@@ -69,7 +69,7 @@ Install **Raspberry Pi Imager** on your computer (raspberrypi.com/software) and 
 ## 2. Connect everything
 
 1. Put the card in the Pi.
-2. Plug the USB audio adapter into any USB port on the Pi.
+2. Plug the USB audio adapter into any USB port on the Pi. They all work the same for audio. On a Pi 4 or 5, one of the black (USB 2) ports is the natural choice, which leaves the faster blue (USB 3) ports free for anything that needs them.
 3. Run the cable from the adapter's headphone socket (green, or marked with a headphone symbol) to the radio's aux input.
 4. Power the Pi and wait about two minutes for the first boot.
 5. Set the radio to its aux source, with its volume low for now.
