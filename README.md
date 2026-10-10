@@ -51,20 +51,20 @@ On a Pi with no headphone jack and no USB adapter, the installer stops with "No 
 
 ## 1. Prepare the card
 
-1. Install **Raspberry Pi Imager** on your computer (raspberrypi.com/software).
-2. Choose your Pi model, then OS **Raspberry Pi OS (other) → Raspberry Pi OS Lite (64-bit)**.
-3. The Imager then walks you through its customisation screens, one at a time. (Older versions show the same settings on a single page.)
+Install **Raspberry Pi Imager** on your computer (raspberrypi.com/software) and put the microSD card in. The Imager lists its steps down the left side; these are the ones in version 2. Older versions ask for the same things in a different layout.
 
-   | Screen | What to enter |
-   |---|---|
-   | **Hostname** | `piradio` |
-   | **Localisation** | Your country's capital, your time zone, and your keyboard layout. The time zone matters: the nightly update runs at 11 PM by the Pi's clock |
-   | **User** | A username and password (the examples below use `pi`). You will need both to connect later |
-   | **Wi-Fi** | Your network's name and password |
-   | **SSH** | Turn on **Enable SSH** and choose **Use password authentication** |
-   | **Raspberry Pi Connect** | Leave it off. It is Raspberry Pi's service for reaching a Pi from outside your home through their website, and needs a Raspberry Pi account. PiRadio does not use it; everything here works over your own Wi-Fi with SSH |
-
-4. Write the card.
+| Step | What to do |
+|---|---|
+| **Device** | Choose your Pi model |
+| **OS** | Choose **Raspberry Pi OS (other)**, then **Raspberry Pi OS Lite (64-bit)** |
+| **Storage** | Choose the microSD card |
+| **Customisation: Hostname** | `piradio` |
+| **Customisation: Localisation** | Your country's capital, your time zone, and your keyboard layout. The time zone matters: the nightly update runs at 11 PM by the Pi's clock |
+| **Customisation: User** | A username and password (the examples below use `pi`). You will need both to connect later |
+| **Customisation: Wi-Fi** | **Secure network**, then your network's name (SSID) and its password, twice |
+| **Customisation: Remote access** | Turn on **Enable SSH** and choose **Use password authentication** |
+| **Customisation: Raspberry Pi Connect** | Leave it off. It is Raspberry Pi's service for reaching a Pi from outside your home through their website, and needs a Raspberry Pi account. PiRadio does not use it; everything here works over your own Wi-Fi with SSH |
+| **Writing** | Check the summary lists the hostname, localisation, user account, Wi-Fi and SSH, then click **Write** |
 
 ## 2. Connect everything
 
