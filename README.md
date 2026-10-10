@@ -58,6 +58,7 @@ On a Pi with no headphone jack and no USB adapter, the installer stops with "No 
    - A username and password (the examples below use `pi`)
    - Your Wi-Fi name, password, and country
    - Under Services, enable **SSH** with password login
+   - **Raspberry Pi Connect**: leave it off. It is Raspberry Pi's service for reaching a Pi from outside your home through their website, and needs a Raspberry Pi account. PiRadio does not use it; everything here works over your own Wi-Fi with SSH.
 4. Write the card.
 
 ## 2. Connect everything
