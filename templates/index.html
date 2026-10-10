@@ -486,7 +486,7 @@ function updateTools() {
   $("sortBtn").hidden = $("rows").children.length < 2;
 }
 
-// The dial position in a station's name: "WXRV 92.5" -> 92.5, "WBZ 1030 AM" -> 1030.
+// The dial position in a station's name: "WXYZ 92.5" -> 92.5, "WBZ 1030 AM" -> 1030.
 // Returns null when the name has none ("ICI Musique", "BBC Radio 4", "Hits 80s").
 function frequencyOf(name) {
   for (const m of name.matchAll(/(?<![\w.,])(\d{2,4}(?:[.,]\d{1,2})?)(?![\w])/g)) {
