@@ -23,3 +23,17 @@ json.dump([{"name": "A", "url": "http://x/a"}], open(os.path.join(t, "presets.js
 r = c.get("/api/presets/export")
 assert r.status_code == 200 and "attachment" in r.headers["Content-Disposition"] and json.loads(r.data) == [{"name": "A", "url": "http://x/a"}]
 print("favorites and export checks passed")
+
+# a leftover player error from start-up is cleared, but not while something is playing
+from contextlib import contextmanager
+class P:
+    state, cleared = "stop", 0
+    def status(self): return {"state": P.state}
+    def clearerror(self): P.cleared += 1
+@contextmanager
+def fake():
+    yield P()
+A.mpd = fake
+assert A.clear_stale_error() is True and P.cleared == 1
+P.state = "play"; assert A.clear_stale_error() is True and P.cleared == 1
+print("stale error checks passed")

@@ -272,10 +272,27 @@ def _explain_failure(wanted):
             _notice += " " + found["message"]
 
 
+def clear_stale_error():
+    """Forget an error the radio player is still holding from before.
+
+    At start-up the player tries to pick up the station it had last, before the
+    network is ready, and keeps the resulting "could not resolve host" message
+    until something plays. Nothing is wrong, so the page should not show it.
+    Returns True once the player has been reached.
+    """
+    with mpd() as client:
+        if client.status().get("state") != "play":
+            client.clearerror()
+    return True
+
+
 def watchdog_loop():
+    tidied = False
     while True:
         time.sleep(WATCH_INTERVAL)
         try:
+            if not tidied:
+                tidied = clear_stale_error()
             watchdog_tick()
         except Exception as exc:  # MPD briefly away (an update, say): try again next time
             app.logger.warning("watchdog: %s", exc)
@@ -578,6 +595,10 @@ def api_stop():
     want(None)
     with mpd() as client:
         client.stop()
+        try:
+            client.clearerror()   # a message about the station just stopped is no longer news
+        except Exception:
+            pass
     stop_spotify()
     return jsonify(current_status())
 
