@@ -212,7 +212,14 @@ sudo bash ~/PiRadioAux/install.sh --fast-boot
 sudo reboot
 ```
 
-On the Pi 4 used for testing, the cloud-init, network-cable and detection changes brought the time from the start of Linux to a working page down from about 20 seconds to about 14. The firmware and bootloader changes act before Linux starts, so that figure does not include them; they have not been timed on this project. To see the whole gain yourself, time from plugging in the power to the page loading, before and after.
+Measured on a new Raspberry Pi 4 with a stopwatch, from plugging in the power to the page loading:
+
+| | Before | After |
+|---|---|---|
+| Power in to page loaded | about 39 seconds | about 28 seconds |
+| Of which Linux itself (`systemd-analyze`) | 22 seconds | 17 seconds |
+
+About half of the gain is in the firmware and bootloader stage before Linux starts, which `systemd-analyze` cannot see.
 
 What it changes, all for a Pi with no screen attached:
 
