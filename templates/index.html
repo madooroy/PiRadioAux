@@ -104,7 +104,7 @@
   .note button { margin-left: 6px; }
   .small { font: inherit; font-size: 13px; padding: 5px 10px; border-radius: 8px; border: 1px solid var(--line); background: none; color: var(--ink); cursor: pointer; }
   .tools { display: flex; gap: 2px 18px; flex-wrap: wrap; align-items: baseline; }
-  #find { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 12px; margin-top: 12px; }
+  #find { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 12px; margin: 4px 0 12px; scroll-margin-top: 12px; }
   #find .bar { display: flex; gap: 8px; }
   #find input { flex: 1; min-width: 0; font: inherit; font-size: 16px; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 9px 10px; }
   .result { display: block; width: 100%; text-align: left; font: inherit; color: var(--ink); background: none; border: 0; border-top: 1px solid var(--line); padding: 10px 2px; cursor: pointer; }
@@ -211,14 +211,6 @@
     <header><h1>Edit presets</h1></header>
     <p class="hint">Each preset needs a name and the station's direct stream address (starts with http:// or https://). The now-playing feed is optional and only needed when a station doesn't show the artist and song by itself.</p>
     <div id="rows"></div>
-    <div class="tools">
-      <button class="link" id="addBtn">+ Add preset</button>
-      <button class="link" id="findBtn">Find a station</button>
-      <button class="link" id="sortBtn">Sort by frequency</button>
-      <a class="link" id="exportBtn" href="/api/presets/export" download="piradio-presets.json">Export</a>
-      <button class="link" id="importBtn">Import</button>
-      <input id="importFile" type="file" accept=".json,application/json" hidden>
-    </div>
     <div id="find" hidden>
       <div class="bar">
         <input id="findQ" type="search" placeholder="Station name" autocapitalize="off" autocomplete="off" autocorrect="off" spellcheck="false" enterkeyhint="search">
@@ -226,6 +218,14 @@
       </div>
       <div id="findMsg">Searches the community Radio Browser directory. Tap a result to add it as a preset.</div>
       <div id="findResults"></div>
+    </div>
+    <div class="tools">
+      <button class="link" id="addBtn">+ Add preset</button>
+      <button class="link" id="findBtn">Find a station</button>
+      <button class="link" id="sortBtn">Sort by frequency</button>
+      <a class="link" id="exportBtn" href="/api/presets/export" download="piradio-presets.json">Export</a>
+      <button class="link" id="importBtn">Import</button>
+      <input id="importFile" type="file" accept=".json,application/json" hidden>
     </div>
     <div class="foot">
       <div id="editMsg" role="status"></div>
@@ -621,6 +621,7 @@ async function findStations() {
     const data = await api("GET", "/api/search?q=" + encodeURIComponent(q));
     if (!data.results.length) { $("findMsg").textContent = "Not in the directory. Many local stations aren\u2019t listed. Try a shorter name or the call letters; otherwise find the address on the station\u2019s own web player (the README explains how) and add it with + Add preset."; return; }
     $("findMsg").textContent = (data.used ? "Nothing matched that exactly, so this is a search for \u201c" + data.used + "\u201d. " : "") + "Tap a result to add it as a preset.";
+    showFind();     // results make the panel taller; keep its search box at the top of the screen
     data.results.forEach(s => {
       const b = document.createElement("button"); b.className = "result";
       b.append(document.createTextNode(s.name));
@@ -638,7 +639,13 @@ async function findStations() {
     });
   } catch (e) { $("findMsg").textContent = e.message; }
 }
-$("findBtn").onclick = () => { $("find").hidden = !$("find").hidden; if (!$("find").hidden) $("findQ").focus(); };
+// The panel opens above the row of links, and is scrolled into view: with a long
+// list of presets it would otherwise open out of sight behind Cancel and Save.
+function showFind() { $("find").scrollIntoView({ behavior: "smooth", block: "start" }); }
+$("findBtn").onclick = () => {
+  $("find").hidden = !$("find").hidden;
+  if (!$("find").hidden) { showFind(); $("findQ").focus({ preventScroll: true }); }
+};
 $("findGo").onclick = findStations;
 $("findQ").addEventListener("keydown", e => { if (e.key === "Enter") findStations(); });
 
