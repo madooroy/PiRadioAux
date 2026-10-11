@@ -17,7 +17,7 @@ It works with any radio, speaker, or amplifier that has an aux or line input. Ho
 
 > **Unofficial.** This project is not affiliated with or endorsed by Spotify, Tivoli Audio, the Raspberry Pi Foundation, Radio Browser, or any radio station. Station addresses and Spotify Connect can change or stop working at any time. Use it at your own risk.
 
-**What has and hasn't been tested:** everything here has been run on one Raspberry Pi 4 using its built-in headphone jack: the install, radio presets, Spotify Connect and the handover with radio, the song display, automatic reconnection, station search and the address check, the nightly update check, most of `--fast-boot` (its firmware and bootloader settings and `--undo-fast-boot` have only been run against copies of the files), and the Power off button. `tools/health_check.sh` and `tests/` are new and have not been run on a Pi. Not yet tested: a USB audio adapter and its shared audio mode, any other Pi model, an update that actually installs something, and the automatic 3 AM restart. The troubleshooting section covers the places most likely to need a tweak.
+**What has and hasn't been tested:** everything here has been run on Raspberry Pi 4 boards, both through the built-in headphone jack and through a USB audio adapter in shared mode, including a from-scratch install following this page: the install, radio presets, Spotify Connect and the handover with radio, the song display, favorites, automatic reconnection, station search and the address check, the nightly update check, `--fast-boot` and `--undo-fast-boot`, the health check, and the Power off button. Not yet tested: any other Pi model, an update that actually installs something, and the automatic 3 AM restart. The troubleshooting section covers the places most likely to need a tweak.
 
 ## What you need
 
@@ -127,13 +127,13 @@ On Windows, `update-pi.bat` in the project folder does those steps when you doub
 ## 4. Use it
 
 1. On your phone (same Wi-Fi) open **http://piradio.local**
-2. Tap a preset. Raise the page's volume slider to about 80, then set the radio's own volume to a comfortable loud level. After that, leave it alone and use the phone.
+2. Turn the radio's own volume right down, then tap a preset. A new install starts the page's volume slider at 50. Bring the radio's volume up to a comfortable level, and from then on leave it alone and use the phone. **If you are listening on headphones, start with the page's slider low:** a USB audio adapter is much louder than the Pi's built-in jack.
 3. Add the page to your home screen:
    - iPhone: Share → **Add to Home Screen**
    - Android: menu → **Add to Home screen**
 4. For Spotify, open the Spotify app, tap the devices icon, and choose **PiRadio**.
 
-Starting Spotify stops the radio. Tapping a preset or Stop Playing ends the Spotify session. While Spotify is playing through the Pi, the page shows "Spotify" with the artist and song in the Now-playing box, and no preset is highlighted. Radio volume is the slider on the page; Spotify volume is in the Spotify app.
+Starting Spotify stops the radio. Tapping a preset or Stop Playing ends the Spotify session. While Spotify is playing through the Pi, the page shows "Spotify" with the artist and song in the Now-playing box, and no preset is highlighted. Radio volume is the slider on the page; Spotify volume is in the Spotify app. Spotify starts each session at 50, and its slider is set up to sit close to the radio's, so switching between the two should not make you jump. They will not match exactly: stations are louder than Spotify at the same setting, and differ from one another.
 
 **If a station drops.** Internet streams stop now and then, because of a hiccup at the station or on your network. The Pi checks every 10 seconds that the station you chose is still playing, and restarts it if it has stopped or frozen. The page shows "Reconnecting…" while it does. If the station is down for a while, the Pi keeps trying, up to once a minute, until it returns or you press Stop Playing. It only does this for a station you started; Stop Playing, Power off, and starting Spotify all end it.
 

@@ -257,6 +257,17 @@ systemctl enable mpd
 # player only answers on this Pi (bind_to_address in mpd.conf).
 systemctl disable --now mpd.socket 2>/dev/null || true
 systemctl restart mpd
+# A new install starts the radio at full volume, which is far too loud through a
+# good audio adapter. Start at 50 the first time; after that the level is yours.
+if [ ! -f "$APP_DIR/presets.json" ]; then
+  for _ in 1 2 3 4 5 6 7 8 9 10; do
+    if mpc -q --host 127.0.0.1 volume 50 >/dev/null 2>&1; then
+      echo "   Radio volume set to 50 for the first start"
+      break
+    fi
+    sleep 1
+  done
+fi
 
 echo "== 4/6  Setting up Spotify Connect (Raspotify)"
 if ! dpkg -s raspotify >/dev/null 2>&1; then
@@ -266,12 +277,19 @@ install -m 755 "$HERE/config/spotify-event.sh" /usr/local/bin/piradio-spotify-ev
 CONF=/etc/raspotify/conf
 [ -f "$CONF.orig" ] || cp "$CONF" "$CONF.orig"
 sed -i '/# --- PiRadio start/,/# --- PiRadio end/d' "$CONF"
+# Earlier hand-made copies of the two volume settings would sit above the block.
+sed -i -E '/^LIBRESPOT_(INITIAL_VOLUME|VOLUME_RANGE)=/d' "$CONF"
 cat >> "$CONF" <<EOF
 # --- PiRadio start
 LIBRESPOT_NAME="$NAME"
 LIBRESPOT_BITRATE="320"
 LIBRESPOT_DEVICE="default"
 LIBRESPOT_ONEVENT="/usr/local/bin/piradio-spotify-event"
+# Volume: Spotify starts every session at 50, and its slider follows a curve
+# chosen to sit close to the radio's slider (Spotify's default is much quieter
+# through the middle, so switching from radio to Spotify sounded like a drop).
+LIBRESPOT_INITIAL_VOLUME="50"
+LIBRESPOT_VOLUME_RANGE="30"
 # --- PiRadio end
 EOF
 systemctl enable raspotify
