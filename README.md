@@ -102,7 +102,7 @@ It is safe to run again, and it keeps presets you have edited from the phone.
 **A different name.** The page and the Spotify speaker are called "PiRadio". To choose another name, for a second one in the house say, add it to the install command. `--hostname` also renames the Pi on the network:
 
 ```
-sudo bash install.sh --name "Kitchen Radio" --hostname kitchenradio
+sudo bash ~/PiRadioAux/install.sh --name "Kitchen Radio" --hostname kitchenradio
 ```
 
 **Updating later.** On the Pi:
@@ -208,7 +208,7 @@ What this means in practice:
 The Pi is meant to stay on, so start-up time only matters after a power cut, an overnight update restart, or when you move it. If you want it shorter, run the installer once with `--fast-boot`:
 
 ```
-sudo bash install.sh --fast-boot
+sudo bash ~/PiRadioAux/install.sh --fast-boot
 sudo reboot
 ```
 
@@ -227,7 +227,7 @@ What it changes, all for a Pi with no screen attached:
 To put everything back:
 
 ```
-sudo bash install.sh --undo-fast-boot
+sudo bash ~/PiRadioAux/install.sh --undo-fast-boot
 sudo reboot
 ```
 
@@ -254,7 +254,7 @@ For a specific problem:
 |---|---|
 | Page won't load | Use the Pi's IP address (shown at the end of the installer, or in your router's device list) in place of `piradio.local`. |
 | Page says it can't reach the player | `sudo systemctl status mpd` |
-| Preset selected but silent | `speaker-test -c 2 -t wav -l 1` plays a voice through the same output. If that is silent too, run `aplay -l` to confirm the adapter is listed, then `sudo bash install.sh` again. |
+| Preset selected but silent | `speaker-test -c 2 -t wav -l 1` plays a voice through the same output. If that is silent too, run `aplay -l` to confirm the adapter is listed, then `sudo bash ~/PiRadioAux/install.sh` again. |
 | One station fails, others work | That stream address is wrong or has moved. `mpc status` shows the error. |
 | "…couldn't be played" under the volume slider | The station never produced sound, so PiRadio stopped retrying after about a minute. The message gives the reason when it can find one. A station that "blocks listeners outside its own country" cannot be fixed with a different address. |
 | A station keeps showing "Reconnecting…" | Its address is probably the chunked (`.m3u8`) kind; see "Avoid chunked (HLS) addresses" above. `journalctl -u piradio -n 30` lists each restart. |
