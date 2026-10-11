@@ -187,7 +187,7 @@
   <section id="off" hidden>
     <h1>Shutting down</h1>
     <p>Wait until the Pi's green light stops flickering and stays off (about 30 seconds), then unplug it.</p>
-    <p>To start it again, plug it back in.</p>
+    <p>To start it again, plug it back in. This page returns by itself once the Pi is running.</p>
   </section>
 
   <section id="favs" hidden>
@@ -441,8 +441,28 @@ $("powerBtn").onclick = async () => {
   try {
     await api("POST", "/api/poweroff");
     $("play").hidden = true; $("off").hidden = false;
+    waitForReturn();
   } catch (e) { $("msg").textContent = e.message; }
 };
+
+// After Power off: watch for the Pi to go away and then answer again, and bring the
+// page back without anyone having to refresh. It must be seen to go down first,
+// because for a few seconds after the tap it is still up and still answering.
+function waitForReturn() {
+  let wentDown = false;
+  const timer = setInterval(async () => {
+    let up = false;
+    try {
+      const ctl = new AbortController();
+      const giveUp = setTimeout(() => ctl.abort(), 1500);
+      const res = await fetch("/api/status", { cache: "no-store", signal: ctl.signal });
+      clearTimeout(giveUp);
+      up = res.ok;
+    } catch (e) { up = false; }
+    if (!up) wentDown = true;
+    else if (wentDown) { clearInterval(timer); location.reload(); }
+  }, 2000);
+}
 
 // Stop and Power off light up in the preset colour when pressed, then fade back.
 for (const id of ["stop", "powerBtn"]) {
