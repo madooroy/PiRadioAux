@@ -152,6 +152,21 @@ Station addresses belong to the stations and change from time to time, so none o
 
 **Find a station.** In Edit presets, tap **Find a station**, type part of the name, and tap a result to add it. The search uses [Radio Browser](https://www.radio-browser.info/), a free community-run directory. Big and mid-sized stations are usually there; small local ones often are not, and for those you add the address by hand (see below). If a search finds nothing, it is tried again without the frequency and "FM", so `WXYZ-FM` or `wxyz 92.5` still finds a station listed as "WXYZ".
 
+**Which entry to pick.** A station often appears several times in the results, once for each stream it offers. The line under each name shows the format and rate, such as "MP3 128k" or "AAC 64k". To choose:
+
+1. Skip any marked "chunked" if a plain one is listed.
+2. Take the highest quality on this ladder, best first:
+
+   | | |
+   |---|---|
+   | AAC at 256k or 320k | The best ordinary streams |
+   | MP3 at 256k or 320k | |
+   | AAC at 128k to 192k, or MP3 at 192k | About equal |
+   | MP3 at 128k | The most common, and fine |
+   | AAC or AAC+ at 64k and below | Made for slow connections; choose only if nothing better exists |
+
+AAC is the more efficient format, so at the same number choose AAC, and treat 128k AAC as roughly equal to 192k MP3. Past the middle of the ladder the difference is hard to hear through a radio's speaker; it shows more on good headphones or a hi-fi. If two entries have the same format and rate, they are usually the same stream added twice, or relays in different countries: any of them will do, and an address without a country in it (`stream.` rather than `stream-uk1.`) normally picks the server nearest you.
+
 **Address check.** When you save, the Pi tries each new or changed address and tells you what it found: live audio, a web page that is not a stream, an error from the server, a chunked address, or a station that blocks listeners outside its own country. You can fix the address or tap **Save anyway**.
 
 **Avoid chunked (HLS) addresses.** A station's web player often uses an address ending in `.m3u8`, where the audio arrives as a playlist of ten-second chunks. The Pi's radio player (MPD) plays these but keeps stopping at commercial breaks: in a one-hour test it had to be restarted 11 times. Use a plain continuous stream instead. For stations on AmperWave (addresses containing `live.amperwave.net`), change `manifest/NAME-hlscN.m3u8` to `direct/NAME-ibcN`, keeping the same number, or no number if there was none. The address check offers this change for you when the continuous address answers.
