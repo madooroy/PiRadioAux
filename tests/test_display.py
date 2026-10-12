@@ -45,6 +45,10 @@ class FakeApi:
         self.calls.append(("volume", v))
         self.st["volume"] = v
 
+    def favorite(self, title, station):
+        self.calls.append(("favorite", title, station))
+        self.st["liked"] = True
+
 
 def make():
     clock, api = Clock(), FakeApi()
@@ -114,7 +118,7 @@ assert v["led"] == "red" and v["message"] == "Player: problem"
 v = D.describe(dict(st, playing=False, current=None, spotify={"state": "paused", "title": "X – Y"}), UI)
 assert v["header"] == "SPOTIFY · PAUSED" and v["song"] == "Y" and v["led"] == "off"
 v = D.describe(dict(st, playing=False, current=None), UI)
-assert v["header"] == "STOPPED" and v["hint"] and v["led"] == "off" and "starts the radio" in v["message"]
+assert v["header"] == "STOPPED" and v["led"] == "off" and "starts the radio" in v["message"]
 UI.started = D.time.time()
 assert D.describe(None, UI)["message"] == "Starting…" and D.describe(None, UI)["led"] == "off"
 UI.started = 0
@@ -132,6 +136,35 @@ api.play(0); r.refresh(); clock.t += 3600; assert r.frame()[2] is True   # stays
 api.down = True; r.refresh(); clock.t += 1
 assert r.frame()[0]["led"] == "red"                  # long after start-up, an unreachable page is a problem
 print("screen-off checks passed")
+
+# --- saving the song to Favorites (hold previous)
+r, api, clock = make()
+r.save_favorite(); assert r.frame()[1] == "No song to save" and not api.calls      # stopped
+api.play(2); api.st["title"] = "Artist - Song"; r.refresh()
+assert r.frame()[0]["liked"] is False
+r.save_favorite(); assert api.calls[-1] == ("favorite", "Artist - Song", "Bravo Radio")
+assert r.frame()[1] == "Saved to Favorites" and r.frame()[0]["liked"] is True
+n = len(api.calls); r.refresh(); r.save_favorite()
+assert len(api.calls) == n and r.frame()[1] == "Already in Favorites"
+api.st.update(title="", liked=False); r.refresh(); r.save_favorite(); assert r.frame()[1] == "No song to save"
+api.st.update(title="Artist - Song", recovering=True); r.refresh(); r.save_favorite(); assert r.frame()[1] == "No song to save"
+api.st.update(recovering=False); r.refresh(); r.step(+1); r.save_favorite(); assert r.frame()[1] == "No song to save"   # while tuning
+r.tuning = None
+api.stop(); api.st.update(spotify={"state": "playing", "title": "Toto \u2013 Africa"}, liked=False); r.refresh()
+r.save_favorite(); assert api.calls[-1] == ("favorite", "Toto \u2013 Africa", "Spotify")
+print("favorite checks passed")
+
+# --- a button that does one thing on a tap and another on a hold
+class FakeButton:
+    hold_time = None; when_pressed = when_held = when_released = None
+did = []
+b = FakeButton()
+D.hold_and_tap(b, tap=lambda: did.append("tap"), hold=lambda: did.append("hold"), kick=lambda: did.append("kick"))
+assert b.hold_time == 1.5
+b.when_pressed(); b.when_released()                      # quick press
+b.when_pressed(); b.when_held(); b.when_released()       # held
+assert did == ["tap", "kick", "hold", "kick"], did
+print("tap and hold checks passed")
 
 # --- drawing never fails, whatever the text
 for view in (D.describe(st, UI), D.describe(None, UI),

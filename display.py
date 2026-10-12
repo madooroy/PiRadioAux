@@ -4,7 +4,7 @@
 Shows the station, artist and song (or what Spotify is playing) on the 2-inch
 screen, and turns the HAT's four buttons into radio controls:
 
-    top left      previous preset
+    top left      previous preset          (hold to save the song to Favorites)
     bottom left   next preset          (either one restarts the last station when stopped)
     top right     volume up            (hold to keep going up)
     bottom right  volume down          (hold to stop playing)
@@ -91,7 +91,7 @@ def describe(status, ui):
     volume, led ("off", "amber", "red"), active (something is playing or wrong).
     """
     view = {"header": "", "station": "", "artist": "", "song": "", "message": "",
-            "message_level": "", "volume": -1, "led": "off", "active": False, "hint": False}
+            "message_level": "", "volume": -1, "led": "off", "active": False, "liked": False}
     if status is None:
         starting = time.time() - ui.started < STARTUP_GRACE
         view.update(header="", station=NAME,
@@ -118,6 +118,7 @@ def describe(status, ui):
             view["led"] = "amber"
         else:
             view["artist"], view["song"] = split_title(status.get("title"))
+            view["liked"] = bool(status.get("liked") and view["song"])
         return view
     spotify = status.get("spotify")
     if spotify:
@@ -125,6 +126,7 @@ def describe(status, ui):
         view["station"] = "Spotify"
         view["artist"], view["song"] = split_title(spotify.get("title"))
         view["volume"] = -1   # Spotify's volume is its own, set in the Spotify app
+        view["liked"] = bool(status.get("liked") and view["song"])
         view["active"] = spotify.get("state") == "playing"
         return view
     # Stopped.
@@ -136,12 +138,11 @@ def describe(status, ui):
     elif status.get("error"):
         view.update(message="Player: " + status["error"], message_level="bad", led="red")
     else:
-        view["hint"] = True
         last = ui.last_preset
         if last is not None and last < len(presets) and (presets[last].get("url") or "").strip():
-            view["message"] = f"Next or Previous plays {presets[last].get('name') or 'the last station'}."
+            view["message"] = f"\u25b2 or \u25bc plays {presets[last].get('name') or 'the last station'}."
         elif playable(presets):
-            view["message"] = "Next or Previous starts the radio."
+            view["message"] = "\u25b2 or \u25bc starts the radio."
         else:
             view["message"] = "Add stations from the preset page on your phone."
     return view
@@ -188,60 +189,94 @@ def _fit(draw, text, sizes, bold, width, max_lines):
     return fnt, _wrap(draw, text, fnt, width, max_lines)
 
 
+RAIL = 30          # width of the strip at each side, beside the buttons, for the button marks
+DIM = (112, 100, 88)
+
+
+def _heart(d, cx, cy, size, fill):
+    r = size / 4
+    d.ellipse((cx - 2 * r, cy - r * 1.6, cx, cy + r * 0.4), fill=fill)
+    d.ellipse((cx, cy - r * 1.6, cx + 2 * r, cy + r * 0.4), fill=fill)
+    d.polygon([(cx - 2 * r + 0.3, cy - r * 0.4), (cx + 2 * r - 0.3, cy - r * 0.4), (cx, cy + r * 2.1)], fill=fill)
+
+
+def _button_marks(d):
+    """What each button does, drawn in the strips beside them.
+
+    Left: previous (up the preset list) with hold-for-favorite, next (down).
+    Right: volume up, volume down with hold-to-stop.
+    """
+    lx, rx = RAIL // 2, WIDTH - RAIL // 2
+    top, bottom = 52, HEIGHT - 58
+    # previous preset, and below it the hold mark: heart
+    d.polygon([(lx - 8, top + 5), (lx + 8, top + 5), (lx, top - 6)], fill=MUTED)
+    _heart(d, lx, top + 24, 12, DIM)
+    # next preset
+    d.polygon([(lx - 8, bottom - 5), (lx + 8, bottom - 5), (lx, bottom + 6)], fill=MUTED)
+    # volume up
+    d.rectangle((rx - 8, top - 1, rx + 8, top + 1), fill=MUTED)
+    d.rectangle((rx - 1, top - 8, rx + 1, top + 8), fill=MUTED)
+    # volume down, and above it the hold mark: stop
+    d.rectangle((rx - 8, bottom - 1, rx + 8, bottom + 1), fill=MUTED)
+    d.rectangle((rx - 5, bottom - 29, rx + 5, bottom - 19), fill=DIM)
+    for x in (RAIL, WIDTH - RAIL):
+        d.line((x, 8, x, HEIGHT - 30), fill=LINE, width=1)
+
+
 def render(view, toast=""):
     img = Image.new("RGB", (WIDTH, HEIGHT), BG)
     d = ImageDraw.Draw(img)
-    pad, inner = 14, WIDTH - 28
-    # Header: where the sound comes from, and the volume.
+    left, right = RAIL + 8, WIDTH - RAIL - 8
+    inner = right - left
+    _button_marks(d)
+    # Header: where the sound comes from, a heart for a saved song, and the volume.
     small = font(15, True)
-    d.text((pad, 10), view["header"], font=small, fill=MUTED)
+    d.text((left, 10), view["header"], font=small, fill=MUTED)
+    end = right
     if view["volume"] >= 0:
         vol = f"VOL {view['volume']}"
-        d.text((WIDTH - pad - d.textlength(vol, font=small), 10), vol, font=small, fill=MUTED)
+        end = right - d.textlength(vol, font=small)
+        d.text((end, 10), vol, font=small, fill=MUTED)
+        end -= 10
+    if view.get("liked"):
+        _heart(d, end - 7, 19, 14, ACCENT)
     # Station.
-    fnt, lines = _fit(d, view["station"], (30, 26, 22), True, inner, 1)
+    fnt, lines = _fit(d, view["station"], (28, 24, 21, 18), True, inner, 1)
     y = 34
-    d.text((pad, y), lines[0], font=fnt, fill=ACCENT)
+    d.text((left, y), lines[0], font=fnt, fill=ACCENT)
     y += fnt.size + 14
-    d.line((pad, y - 6, WIDTH - pad, y - 6), fill=LINE, width=1)
+    d.line((left, y - 6, right, y - 6), fill=LINE, width=1)
     # Artist and song, or a message.
     bottom = HEIGHT - 22
     if view["message"]:
         colour = {"bad": BAD, "warn": WARN}.get(view["message_level"], INK)
-        fnt, lines = _fit(d, view["message"], (22, 19, 16), view["message_level"] == "bad", inner, 5)
+        fnt, lines = _fit(d, view["message"], (21, 18, 16), view["message_level"] == "bad", inner, 5)
         for line in lines:
-            d.text((pad, y), line, font=fnt, fill=colour)
+            d.text((left, y), line, font=fnt, fill=colour)
             y += fnt.size + 6
     else:
         if view["artist"]:
-            fnt, lines = _fit(d, view["artist"], (22, 19, 17), False, inner, 2)
+            fnt, lines = _fit(d, view["artist"], (21, 18, 16), False, inner, 2)
             for line in lines:
-                d.text((pad, y), line, font=fnt, fill=MUTED)
+                d.text((left, y), line, font=fnt, fill=MUTED)
                 y += fnt.size + 5
             y += 4
         if view["song"]:
-            room = max(1, min(3, (bottom - y) // 30))
-            fnt, lines = _fit(d, view["song"], (26, 22, 19), True, inner, room)
+            room = max(1, min(3, (bottom - y) // 28))
+            fnt, lines = _fit(d, view["song"], (25, 21, 18), True, inner, room)
             for line in lines:
                 if y + fnt.size > bottom:
                     break
-                d.text((pad, y), line, font=fnt, fill=INK)
+                d.text((left, y), line, font=fnt, fill=INK)
                 y += fnt.size + 6
-    # On the Stopped screen, what the buttons do (they sit at the screen's sides).
-    if view.get("hint") and not toast:
-        fnt = font(14)
-        for i, line in enumerate(("Left buttons:  previous / next station",
-                                  "Right buttons:  volume up / down",
-                                  "Hold volume down to stop")):
-            d.text((pad, HEIGHT - 76 + i * 19), line, font=fnt, fill=MUTED)
     # Volume bar along the bottom, or a short message in its place.
     if toast:
         fnt = font(15, True)
         d.rectangle((0, HEIGHT - 26, WIDTH, HEIGHT), fill=LINE)
         d.text(((WIDTH - d.textlength(toast, font=fnt)) / 2, HEIGHT - 22), toast, font=fnt, fill=INK)
     elif view["volume"] >= 0:
-        d.rectangle((pad, HEIGHT - 10, WIDTH - pad, HEIGHT - 6), fill=LINE)
-        d.rectangle((pad, HEIGHT - 10, pad + int(inner * min(100, view["volume"]) / 100), HEIGHT - 6), fill=ACCENT)
+        d.rectangle((left, HEIGHT - 10, right, HEIGHT - 6), fill=LINE)
+        d.rectangle((left, HEIGHT - 10, left + int(inner * min(100, view["volume"]) / 100), HEIGHT - 6), fill=ACCENT)
     return img
 
 
@@ -272,6 +307,9 @@ class Api:
 
     def volume(self, value):
         return self._call("POST", "/api/volume", {"volume": value})
+
+    def favorite(self, title, station):
+        return self._call("POST", "/api/favorites", {"title": title, "station": station})
 
 
 # ---- What the buttons do ---------------------------------------------------------
@@ -365,6 +403,42 @@ class Radio:
             if self.status is not None:
                 self.status["volume"] = new
             self.say(f"Volume {new}")
+        except Exception as err:
+            self.say(_short_error(err))
+
+    def song_showing(self):
+        """(title, station) of the song on screen, or None: what the phone page's heart would save."""
+        st = self.status or {}
+        if self.tuning is not None:
+            return None
+        if st.get("playing"):
+            if st.get("recovering") or not split_title(st.get("title"))[1]:
+                return None
+            presets, cur = st.get("presets") or [], st.get("current")
+            station = presets[cur].get("name", "") if cur is not None and cur < len(presets) else ""
+            return st["title"], station
+        spotify = st.get("spotify") or {}
+        if spotify.get("title"):
+            return spotify["title"], "Spotify"
+        return None
+
+    def save_favorite(self):
+        self.wake()
+        with self.lock:
+            song = self.song_showing()
+            liked = (self.status or {}).get("liked")
+        if not song:
+            self.say("No song to save")
+            return
+        if liked:
+            self.say("Already in Favorites")
+            return
+        try:
+            self.api.favorite(*song)
+            with self.lock:
+                if self.status is not None:
+                    self.status["liked"] = True
+            self.say("Saved to Favorites")
         except Exception as err:
             self.say(_short_error(err))
 
@@ -523,32 +597,38 @@ def wire_buttons(hat, radio, kick):
             kick()
         return run
 
-    hat.top_left.when_pressed = act(lambda: radio.step(-1))
+    # Previous on release; held for 1.5 seconds it saves the song instead.
+    hold_and_tap(hat.top_left, tap=lambda: radio.step(-1), hold=radio.save_favorite, kick=kick)
     hat.bottom_left.when_pressed = act(lambda: radio.step(+1))
     # Volume up: once per press, and again every half second while held.
     hat.top_right.hold_time, hat.top_right.hold_repeat = 0.5, True
     hat.top_right.when_pressed = act(lambda: radio.change_volume(+VOLUME_STEP))
     hat.top_right.when_held = act(lambda: radio.change_volume(+VOLUME_STEP))
     # Volume down on release; held for 1.5 seconds it stops instead.
-    held = {"y": False}
-    hat.bottom_right.hold_time = 1.5
+    hold_and_tap(hat.bottom_right, tap=lambda: radio.change_volume(-VOLUME_STEP), hold=radio.stop, kick=kick)
 
-    def down_pressed(*_):
-        held["y"] = False
 
-    def down_held(*_):
-        held["y"] = True
-        radio.stop()
+def hold_and_tap(button, tap, hold, kick, hold_time=1.5):
+    """A quick press does tap() when let go; holding does hold() once, and no tap."""
+    held = {"yes": False}
+    button.hold_time = hold_time
+
+    def pressed(*_):
+        held["yes"] = False
+
+    def on_hold(*_):
+        held["yes"] = True
+        hold()
         kick()
 
-    def down_released(*_):
-        if not held["y"]:
-            radio.change_volume(-VOLUME_STEP)
+    def released(*_):
+        if not held["yes"]:
+            tap()
             kick()
 
-    hat.bottom_right.when_pressed = down_pressed
-    hat.bottom_right.when_held = down_held
-    hat.bottom_right.when_released = down_released
+    button.when_pressed = pressed
+    button.when_held = on_hold
+    button.when_released = released
 
 
 def main(argv):

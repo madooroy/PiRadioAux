@@ -268,15 +268,18 @@ With a [Pimoroni Display HAT Mini](https://shop.pimoroni.com/products/display-ha
 
 The screen shows the preset number and station, then the artist and the song, in large type. It does the same for Spotify. The volume is shown along the bottom.
 
-| Button | Does |
-|---|---|
-| Top left | Previous preset |
-| Bottom left | Next preset |
-| Top right | Volume up (hold to keep going) |
-| Bottom right | Volume down; hold for 1.5 seconds to stop playing |
+| Button | Mark on screen | Tap | Hold 1.5 seconds |
+|---|---|---|---|
+| Top left | ▲ with a small heart | Previous preset | Save the song to Favorites |
+| Bottom left | ▼ | Next preset | |
+| Top right | + | Volume up | Keeps going up |
+| Bottom right | − with a small square | Volume down | Stop playing |
+
+The marks sit in narrow strips down each side of the screen, beside their buttons.
 
 - **Choosing a station:** press previous or next as many times as you like. The station starts one second after the last press, so you can skip past several without each one connecting.
 - **From Stopped:** either previous or next brings back the last station you listened to.
+- **Saving a song** works the same as the heart on the phone page, for radio and for Spotify. A heart appears beside the volume while the song showing is in your Favorites. Holding on a song that's already saved changes nothing, and songs are removed from the phone page.
 - **Spotify's volume** is set in the Spotify app. The volume buttons only change the radio's.
 - **The light** stays off while all is well. It shows amber while a station is connecting or reconnecting, and red when a station couldn't be played or the page can't be reached.
 - **The screen goes dark** a minute after playing stops. Any button wakes it.
