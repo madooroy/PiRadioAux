@@ -8,7 +8,7 @@ import os, subprocess, sys
 
 here = os.path.dirname(os.path.abspath(__file__))
 failed = []
-for name in ("test_app.py", "test_giveup.py", "test_spotify.py", "test_favorites.py"):
+for name in ("test_app.py", "test_giveup.py", "test_spotify.py", "test_favorites.py", "test_display.py"):
     run = subprocess.run([sys.executable, os.path.join(here, name)], capture_output=True, text=True)
     passed = [line for line in run.stdout.splitlines() if line.endswith("passed")]
     if run.returncode == 0:
