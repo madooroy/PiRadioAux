@@ -48,7 +48,7 @@ section "Installed files ($APP_DIR)"
 if [[ -f $APP_DIR/app.py && -f $APP_DIR/templates/index.html ]]; then
     ok "app files present"
     if [[ -f $SRC/app.py ]]; then
-        if cmp -s "$SRC/app.py" "$APP_DIR/app.py" && cmp -s "$SRC/templates/index.html" "$APP_DIR/templates/index.html"; then
+        if cmp -s "$SRC/app.py" "$APP_DIR/app.py" && cmp -s "$SRC/display.py" "$APP_DIR/display.py" && cmp -s "$SRC/templates/index.html" "$APP_DIR/templates/index.html"; then
             ok "installed version matches $SRC"
         else
             warn "installed version differs from $SRC (copied but not installed?) - run: sudo bash $SRC/install.sh"
@@ -219,6 +219,31 @@ if curl -s -m 6 -o /dev/null -A PiRadioAux/1.0 "https://de1.api.radio-browser.in
     ok "internet reachable (station directory answers)"
 else
     warn "the station directory did not answer: Find a station may not work right now"
+fi
+
+if grep -q '^PIRADIO_DISPLAY="1"' /etc/default/piradio 2>/dev/null; then
+    section "Screen and buttons (Display HAT Mini)"
+    if [[ -e /dev/spidev0.1 ]]; then
+        ok "SPI is on (the screen's connection)"
+    else
+        bad "SPI is off - restart the Pi once after install.sh --display (sudo reboot)"
+    fi
+    if [[ $(systemctl is-active piradio-display 2>/dev/null) == active ]]; then
+        ok "piradio-display (screen and buttons) is running"
+    else
+        bad "piradio-display is not running - see: journalctl -u piradio-display -b --no-pager | tail -n 30"
+    fi
+    if python3 -c "import PIL, numpy, spidev, gpiozero" 2>/dev/null; then
+        ok "Python libraries present (pil, numpy, spidev, gpiozero)"
+    else
+        bad "Python libraries for the screen missing - run: sudo bash $SRC/install.sh --display"
+    fi
+    restarts=$(systemctl show -p NRestarts --value piradio-display 2>/dev/null)
+    [[ ${restarts:-0} -eq 0 ]] || warn "the screen program restarted itself $restarts time(s) - see: journalctl -u piradio-display -b --no-pager | tail -n 40"
+    temp=$(vcgencmd measure_temp 2>/dev/null | sed -n "s/temp=\([0-9]*\).*/\1/p")
+    if [[ -n $temp ]]; then
+        if [[ $temp -lt 70 ]]; then ok "chip temperature ${temp} C under the screen"; else warn "chip temperature ${temp} C - the screen may be trapping heat"; fi
+    fi
 fi
 
 section "Start-up"

@@ -260,6 +260,48 @@ Things to know:
 - **The undo restores `config.txt` as it was before the first `--fast-boot`**, so any other change you made to that file since then is lost.
 - **If the Pi does not come back afterwards:** the installer keeps the original files beside the changed ones as `config.txt.piradio-bak` and `cmdline.txt.piradio-bak`. Both are on the card's small boot partition, which a Windows or Mac computer can open. Put the card in a computer, copy `config.txt.piradio-bak` over `config.txt`, and delete the words `cloud-init=disabled` from the end of `cmdline.txt`.
 
+## Screen and buttons (optional)
+
+With a [Pimoroni Display HAT Mini](https://shop.pimoroni.com/products/display-hat-mini) on the Pi, you can see what is playing and work the radio without a phone. It is a 2-inch screen with four buttons and a small light, and it presses onto the Pi's 40-pin header without soldering.
+
+> **Not yet tried on the real board.** The program has been checked without the hardware (`tests/test_display.py`), and these instructions will be updated after the first real install.
+
+The screen shows the preset number and station, then the artist and the song, in large type. It does the same for Spotify. The volume is shown along the bottom.
+
+| Button | Does |
+|---|---|
+| Top left | Previous preset |
+| Bottom left | Next preset |
+| Top right | Volume up (hold to keep going) |
+| Bottom right | Volume down; hold for 1.5 seconds to stop playing |
+
+- **Choosing a station:** press previous or next as many times as you like. The station starts one second after the last press, so you can skip past several without each one connecting.
+- **From Stopped:** either previous or next brings back the last station you listened to.
+- **Spotify's volume** is set in the Spotify app. The volume buttons only change the radio's.
+- **The light** stays off while all is well. It shows amber while a station is connecting or reconnecting, and red when a station couldn't be played or the page can't be reached.
+- **The screen goes dark** a minute after playing stops. Any button wakes it.
+
+To set it up, fit the HAT with the Pi switched off and unplugged, then:
+
+```
+sudo bash ~/PiRadioAux/install.sh --display
+sudo reboot
+```
+
+The restart is needed once, to switch on the Pi's SPI connection, which the screen uses. After that, updates keep the screen as it is.
+
+| Command | Does |
+|---|---|
+| `sudo bash ~/PiRadioAux/install.sh --flip-display` | Turns the picture the other way up, for when the Pi sits the other way round. The buttons follow, so top left is always previous. |
+| `sudo bash ~/PiRadioAux/install.sh --display` | Back to the normal way up |
+| `sudo bash ~/PiRadioAux/install.sh --no-display` | Stops using the screen and buttons |
+
+Things to know:
+
+- **A fan on the header** has nowhere to plug in once the HAT is on. The Pi doesn't need one for this job. The health check reports the chip temperature while the screen is in use.
+- **Tall heatsinks** can touch the back of the HAT. An 11 mm stacking header between the two raises it.
+- **`--fast-boot`** doesn't affect this screen. Its `display_auto_detect=0` setting is about screens on the Pi's ribbon-cable connector.
+
 ## Troubleshooting
 
 Start with the health check. On the Pi, after `ssh pi@piradio.local`:
@@ -268,7 +310,7 @@ Start with the health check. On the Pi, after `ssh pi@piradio.local`:
 sudo bash ~/PiRadioAux/tools/health_check.sh
 ```
 
-It changes nothing. It prints one line per check, marked OK, WARN or FAIL, covering the three services, the installed files and presets, the page, the radio player, the audio output, Spotify Connect, automatic updates, the network, and the SD card and power supply. A FAIL line says what to do next. If you ask for help, include its output.
+It changes nothing. It prints one line per check, marked OK, WARN or FAIL, covering the services, the installed files and presets, the page, the radio player, the audio output, Spotify Connect, automatic updates, the network, and the SD card and power supply. A FAIL line says what to do next. If you ask for help, include its output.
 
 For a specific problem:
 
@@ -302,6 +344,7 @@ For a specific problem:
 | `config/mpd.conf` | Radio player settings |
 | `config/spotify-event.sh` | Hands over to Spotify: stops the radio and tells the preset page |
 | `config/piradio.service` | Starts the preset page on boot |
+| `display.py`, `config/piradio-display.service` | Optional screen and buttons, see [Screen and buttons](#screen-and-buttons-optional) |
 
 On the Pi the app lives in `/opt/piradio`, and its presets in `/opt/piradio/presets.json`.
 
@@ -312,6 +355,7 @@ PiRadioAux is a small layer over other people's work:
 - [MPD](https://www.musicpd.org/) plays the radio streams.
 - [Raspotify](https://github.com/dtcooper/raspotify) and [librespot](https://github.com/librespot-org/librespot) provide Spotify Connect.
 - [Radio Browser](https://www.radio-browser.info/) is the community directory behind Find a station.
+- The screen driver follows [Pimoroni](https://github.com/pimoroni/st7789-python)'s own libraries for the Display HAT Mini's pins and start-up sequence.
 - [Flask](https://flask.palletsprojects.com/), [Waitress](https://docs.pylonsproject.org/projects/waitress/) and [python-mpd2](https://github.com/Mic92/python-mpd2) run the preset page.
 
 If you want a full music player for the Pi, with a music library, AirPlay, Bluetooth and support for high-end audio boards, look at [moOde audio](https://moodeaudio.org/) or [Volumio](https://volumio.com/).

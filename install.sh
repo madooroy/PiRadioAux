@@ -6,6 +6,9 @@
 #     --hostname kitchenradio  also rename the Pi on the network (page becomes http://kitchenradio.local)
 #     --fast-boot              shorten start-up for a Pi with no screen (see the README)
 #     --undo-fast-boot         put the start-up settings back, and do nothing else
+#     --display                use a Pimoroni Display HAT Mini (screen and buttons, see the README)
+#     --flip-display           the same, with the picture turned the other way up
+#     --no-display             stop using the screen and buttons
 # Safe to run again after changing files or swapping the audio adapter.
 set -euo pipefail
 
@@ -20,12 +23,17 @@ NAME=""
 NEW_HOST=""
 FAST_BOOT=0
 UNDO_FAST_BOOT=0
+DISPLAY_CHOICE=""   # "on", "off" or "" (keep what an earlier run chose)
+FLIP_CHOICE=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --name)     NAME="${2:-}"; shift 2 ;;
     --hostname) NEW_HOST="${2:-}"; shift 2 ;;
     --fast-boot) FAST_BOOT=1; shift ;;
     --undo-fast-boot) UNDO_FAST_BOOT=1; shift ;;
+    --display) DISPLAY_CHOICE=on; FLIP_CHOICE="${FLIP_CHOICE:-0}"; shift ;;
+    --flip-display) DISPLAY_CHOICE=on; FLIP_CHOICE=1; shift ;;
+    --no-display) DISPLAY_CHOICE=off; shift ;;
     *) echo "Unknown option: $1" >&2; exit 1 ;;
   esac
 done
@@ -34,6 +42,13 @@ if [ -z "$NAME" ] && [ -f /etc/default/piradio ]; then
   NAME="$(sed -n 's/^PIRADIO_NAME="\(.*\)"$/\1/p' /etc/default/piradio)"
 fi
 NAME="${NAME:-PiRadio}"
+# The same for the screen-and-buttons choice.
+saved_setting() { sed -n "s/^$1=\"\(.*\)\"\$/\1/p" /etc/default/piradio 2>/dev/null; }
+if [ -z "$DISPLAY_CHOICE" ]; then
+  [ "$(saved_setting PIRADIO_DISPLAY)" = 1 ] && DISPLAY_CHOICE=on || DISPLAY_CHOICE=off
+fi
+FLIP_CHOICE="${FLIP_CHOICE:-$(saved_setting PIRADIO_DISPLAY_FLIP)}"
+FLIP_CHOICE="${FLIP_CHOICE:-0}"
 if ! printf '%s' "$NAME" | grep -Eq '^[A-Za-z0-9][A-Za-z0-9 ._-]{0,31}$'; then
   echo "The name can use letters, numbers, spaces, dots, dashes and underscores (up to 32)." >&2
   exit 1
@@ -71,6 +86,19 @@ set_net_install() {
     echo "   Bootloader: could not be changed, left alone"
   fi
   rm -f "$tmp"
+}
+
+# The Display HAT Mini's screen is driven over SPI, which is off on a new card.
+SPI_RESTART=0
+ensure_spi() {
+  [ -f "$BOOT/config.txt" ] || return 0
+  if grep -Eq '^dtparam=spi=on' "$BOOT/config.txt"; then
+    echo "   SPI (for the screen): already on"
+  else
+    { echo; echo "# Screen on the Display HAT Mini (PiRadio install.sh --display)"; echo "[all]"; echo "dtparam=spi=on"; } >> "$BOOT/config.txt"
+    echo "   SPI (for the screen): switched on"
+  fi
+  [ -e /dev/spidev0.1 ] || SPI_RESTART=1
 }
 
 fast_boot_apply() {
@@ -141,6 +169,8 @@ fast_boot_undo() {
     echo "   Wired-socket wait: back to the default"
   fi
   set_net_install 1
+  # The restored config.txt predates the screen; keep the screen working.
+  [ "$(saved_setting PIRADIO_DISPLAY)" = 1 ] && ensure_spi
   echo "Done. Restart to apply:  sudo reboot"
 }
 
@@ -298,7 +328,7 @@ systemctl restart raspotify
 echo "== 5/6  Installing the preset page"
 id piradio >/dev/null 2>&1 || useradd --system --home "$APP_DIR" --shell /usr/sbin/nologin piradio
 mkdir -p "$APP_DIR/templates" "$APP_DIR/static"
-cp "$HERE/app.py" "$APP_DIR/"
+cp "$HERE/app.py" "$HERE/display.py" "$APP_DIR/"
 cp "$HERE/templates/index.html" "$APP_DIR/templates/"
 cp "$HERE"/static/* "$APP_DIR/static/"
 # Keep presets you have already edited from the phone.
@@ -310,7 +340,8 @@ if [ ! -f "$APP_DIR/presets.json" ]; then
   fi
 fi
 chown -R piradio:piradio "$APP_DIR"
-printf 'PIRADIO_NAME="%s"\n' "$NAME" > /etc/default/piradio
+DISPLAY_ON=0; [ "$DISPLAY_CHOICE" = on ] && DISPLAY_ON=1
+printf 'PIRADIO_NAME="%s"\nPIRADIO_DISPLAY="%s"\nPIRADIO_DISPLAY_FLIP="%s"\n' "$NAME" "$DISPLAY_ON" "$FLIP_CHOICE" > /etc/default/piradio
 echo 'piradio ALL=(root) NOPASSWD: /usr/bin/systemctl restart raspotify, /usr/bin/systemctl poweroff' > /etc/sudoers.d/piradio
 chmod 440 /etc/sudoers.d/piradio
 visudo -cf /etc/sudoers.d/piradio >/dev/null
@@ -319,14 +350,35 @@ systemctl daemon-reload
 systemctl enable piradio
 systemctl restart piradio
 
+# Screen and buttons (Pimoroni Display HAT Mini), only when asked for.
+cp "$HERE/config/piradio-display.service" /etc/systemd/system/piradio-display.service
+systemctl daemon-reload
+if [ "$DISPLAY_ON" = 1 ]; then
+  echo "== Screen and buttons (Display HAT Mini)"
+  apt-get install -y python3-pil python3-numpy python3-spidev python3-gpiozero python3-lgpio fonts-dejavu-core
+  ensure_spi
+  systemctl enable piradio-display
+  if [ "$SPI_RESTART" = 1 ]; then
+    echo "   The screen starts after a restart:  sudo reboot"
+  else
+    systemctl restart piradio-display
+  fi
+  [ "$FLIP_CHOICE" = 1 ] && echo "   Picture turned the other way up (undo: run install.sh --display)"
+elif systemctl is-enabled --quiet piradio-display 2>/dev/null; then
+  echo "== Screen and buttons: switched off"
+  systemctl disable --now piradio-display
+fi
+
 if [ "$FAST_BOOT" = 1 ]; then
   fast_boot_apply
 fi
 
 echo "== 6/6  Checking"
 sleep 2
-for svc in mpd raspotify piradio; do
-  printf '   %-10s %s\n' "$svc" "$(systemctl is-active "$svc" || true)"
+SERVICES="mpd raspotify piradio"
+[ "$DISPLAY_ON" = 1 ] && [ "$SPI_RESTART" = 0 ] && SERVICES="$SERVICES piradio-display"
+for svc in $SERVICES; do
+  printf '   %-16s %s\n' "$svc" "$(systemctl is-active "$svc" || true)"
 done
 
 if [ -n "$NEW_HOST" ] && [ "$NEW_HOST" != "$(hostname)" ]; then

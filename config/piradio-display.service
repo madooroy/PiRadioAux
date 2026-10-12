@@ -1,0 +1,18 @@
+[Unit]
+Description=PiRadio screen and buttons (Pimoroni Display HAT Mini)
+After=piradio.service
+Wants=piradio.service
+
+[Service]
+User=piradio
+# Access to the pins (buttons, light) and to SPI (the screen).
+SupplementaryGroups=gpio spi
+WorkingDirectory=/opt/piradio
+# PIRADIO_NAME and PIRADIO_DISPLAY_FLIP (written by install.sh).
+EnvironmentFile=-/etc/default/piradio
+ExecStart=/usr/bin/python3 /opt/piradio/display.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
