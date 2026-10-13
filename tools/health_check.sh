@@ -195,6 +195,15 @@ else
     info "no update has run yet"
 fi
 [[ -f /var/run/reboot-required ]] && info "a restart is pending (it happens by itself at 3 AM)"
+unfinished=$(dpkg --audit 2>/dev/null | awk '/^ [a-z0-9]/ {print $1}' | tr '\n' ' ')
+if [[ -n $unfinished ]]; then
+    bad "an install was left unfinished: ${unfinished}- see: sudo dpkg --configure -a"
+else
+    ok "no unfinished installs"
+fi
+if grep -q '^auto_initramfs=0' /boot/firmware/config.txt 2>/dev/null && [[ ! -f /etc/initramfs-tools/conf.d/piradio-fast-boot ]]; then
+    bad "--fast-boot is on without its initramfs setting: kernel updates will fail - run: sudo bash $SRC/install.sh"
+fi
 
 section "Network"
 if command -v iw >/dev/null && iw dev wlan0 link 2>/dev/null | grep -q '^Connected'; then

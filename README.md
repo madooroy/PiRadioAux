@@ -244,6 +244,7 @@ What it changes, all for a Pi with no screen attached:
 | NetworkManager | Waits 3 seconds, not 6, for a network cable | The Pi otherwise waits the full 6 seconds on an empty wired socket even when Wi-Fi is already connected |
 | `/boot/firmware/config.txt` | `camera_auto_detect=0`, `display_auto_detect=0`, `boot_delay=0`, `disable_splash=1` | No looking for a camera or display, no firmware pause, no splash screen |
 | `/boot/firmware/config.txt` | `auto_initramfs=0`, only when the Pi starts from an SD card | The initramfs is not needed to start from a card |
+| `/etc/initramfs-tools/conf.d/piradio-fast-boot` | `MODULES=most`, alongside `auto_initramfs=0` | Without it, rebuilding the (unused) initramfs fails, and with it any nightly update that includes a kernel or driver package |
 | Bootloader (Pi 4 only) | `NET_INSTALL_AT_POWER_ON=0` | No pause at power-on waiting for a keyboard. This is stored on the Pi's board, not on the card |
 
 To put everything back:
@@ -327,6 +328,7 @@ For a specific problem:
 | A station keeps showing "Reconnecting…" | Its address is probably the chunked (`.m3u8`) kind; see "Avoid chunked (HLS) addresses" above. `journalctl -u piradio -n 30` lists each restart. |
 | PiRadio missing in Spotify | `sudo systemctl status raspotify` and `journalctl -u raspotify -n 30`. Phone and Pi must be on the same Wi-Fi network. |
 | Spotify shows playing but silent, or radio keeps playing under Spotify | Look at `journalctl -u raspotify -n 30`. The likely cause is Raspotify's security sandbox blocking the audio output or the hand-over script (`/usr/local/bin/piradio-spotify-event`). |
+| Health check says "an install was left unfinished", or the update log shows `update-initramfs: failed` and "failed to determine device for /" | A Pi set up with an earlier `--fast-boot`. Run `sudo bash ~/PiRadioAux/install.sh` (it adds the missing setting), then `sudo dpkg --configure -a`. |
 | Hum through the radio | A ground loop isolator (about $10) on the audio cable. |
 
 ## What's in the folder
