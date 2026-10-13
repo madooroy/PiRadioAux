@@ -62,6 +62,21 @@ fi
 # PIRADIO_BOOT_DIR and PIRADIO_NM_DIR let these be tried on copies of the files.
 BOOT="${PIRADIO_BOOT_DIR:-/boot/firmware}"
 NM_CONF="${PIRADIO_NM_DIR:-/etc/NetworkManager/conf.d}/10-piradio-eth0.conf"
+INITRAMFS_CONF="${PIRADIO_INITRAMFS_DIR:-/etc/initramfs-tools/conf.d}/piradio-fast-boot"
+
+# Started without an initramfs (auto_initramfs=0), Linux names the system drive
+# /dev/root, and update-initramfs can then no longer tell which drive it is: it
+# fails, and so does the nightly update that triggered it. MODULES=most builds
+# the file without needing to know. The file is bigger, but it isn't loaded.
+initramfs_guard() {
+  [ -f "$BOOT/config.txt" ] && grep -q '^auto_initramfs=0' "$BOOT/config.txt" || return 0
+  [ -d "$(dirname "$INITRAMFS_CONF")" ] || return 0
+  if [ ! -f "$INITRAMFS_CONF" ]; then
+    printf '%s\n' '# PiRadio --fast-boot: the Pi starts without the initramfs, so build it' \
+      '# without needing to know the system drive (see install.sh).' 'MODULES=most' > "$INITRAMFS_CONF"
+    echo "   Initramfs: set to build without looking up the system drive"
+  fi
+}
 
 # The Pi 4's bootloader pauses at power-on in case a keyboard asks for a network
 # install. The setting lives on the board itself, not on the card.
@@ -144,6 +159,7 @@ fast_boot_apply() {
     fi
     echo "   config.txt: $settings"
   fi
+  initramfs_guard
   # 4. Bootloader (Raspberry Pi 4).
   set_net_install 0
   echo "   The original files are kept beside the changed ones as *.piradio-bak."
@@ -167,6 +183,10 @@ fast_boot_undo() {
   if [ -f "$NM_CONF" ]; then
     rm -f "$NM_CONF"
     echo "   Wired-socket wait: back to the default"
+  fi
+  if [ -f "$INITRAMFS_CONF" ]; then
+    rm -f "$INITRAMFS_CONF"
+    echo "   Initramfs: back to the default"
   fi
   set_net_install 1
   # The restored config.txt predates the screen; keep the screen working.
@@ -371,6 +391,8 @@ fi
 
 if [ "$FAST_BOOT" = 1 ]; then
   fast_boot_apply
+else
+  initramfs_guard   # a Pi set up with an earlier --fast-boot gets this on its next update
 fi
 
 echo "== 6/6  Checking"
