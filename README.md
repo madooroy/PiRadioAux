@@ -133,6 +133,8 @@ On Windows, `update-pi.bat` in the project folder does those steps when you doub
    - Android: menu → **Add to Home screen**
 4. For Spotify, open the Spotify app, tap the devices icon, and choose **PiRadio**.
 
+When nothing is playing, the Stop Playing button reads "Not Playing" and is greyed out.
+
 Starting Spotify stops the radio. Tapping a preset or Stop Playing ends the Spotify session. While Spotify is playing through the Pi, the page shows "Spotify" with the artist and song in the Now-playing box, and no preset is highlighted. Radio volume is the slider on the page; Spotify volume is in the Spotify app. Spotify starts each session at 50, and its slider is set up to sit close to the radio's, so switching between the two should not make you jump. They will not match exactly: stations are louder than Spotify at the same setting, and differ from one another.
 
 **If a station drops.** Internet streams stop now and then, because of a hiccup at the station or on your network. The Pi checks every 10 seconds that the station you chose is still playing, and restarts it if it has stopped or frozen. The page shows "Reconnecting…" while it does. If the station is down for a while, the Pi keeps trying, up to once a minute, until it returns or you press Stop Playing. It only does this for a station you started; Stop Playing, Power off, and starting Spotify all end it.
