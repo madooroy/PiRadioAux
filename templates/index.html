@@ -80,6 +80,7 @@
     background: none; color: var(--ink); border: 1px solid var(--line);
     font: inherit; font-weight: 600; cursor: pointer;
   }
+  #stop:disabled { color: var(--muted); font-weight: 400; cursor: default; transform: none; }
   .vol { display: flex; align-items: center; gap: 12px; margin-top: 20px; }
   .vol label { font-size: 14px; color: var(--muted); }
   .vol output { width: 3ch; text-align: right; font-variant-numeric: tabular-nums; color: var(--muted); font-size: 14px; }
@@ -297,6 +298,10 @@ function render() {
     setText("nowStation", "Off");
     setText("nowTitle", "---");
   }
+  // Nothing to stop: say so, rather than offer a button that does nothing.
+  const idle = !state.playing && !state.spotify;
+  $("stop").disabled = idle;
+  setText("stop", idle ? "Not Playing" : "Stop Playing");
   const song = songShowing();
   $("heart").disabled = !song;
   $("heart").setAttribute("aria-pressed", song && state.liked ? "true" : "false");
@@ -469,6 +474,7 @@ for (const id of ["stop", "powerBtn"]) {
   const el = $(id);
   let timer;
   el.addEventListener("pointerdown", () => {
+    if (el.disabled) return;
     clearTimeout(timer);
     el.classList.add("flash");
     timer = setTimeout(() => el.classList.remove("flash"), 350);
