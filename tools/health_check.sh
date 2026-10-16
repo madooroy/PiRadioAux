@@ -230,6 +230,44 @@ else
     warn "the station directory did not answer: Find a station may not work right now"
 fi
 
+section "Staying on"
+if [[ -d /sys/class/net/wlan0 ]]; then
+    ps=$(iw dev wlan0 get power_save 2>/dev/null | sed -n 's/.*: //p')
+    if [[ $ps == off ]]; then
+        ok "Wi-Fi power saving is off"
+    else
+        warn "Wi-Fi power saving is ${ps:-unknown}: it can make the Wi-Fi hang - run: sudo bash $SRC/install.sh"
+    fi
+fi
+if [[ $(systemctl is-active piradio-netcheck.timer 2>/dev/null) == active ]]; then
+    ok "network check runs every minute (restarts a hung Wi-Fi)"
+else
+    bad "network check is not running - run: sudo bash $SRC/install.sh"
+fi
+wd=$(systemctl show -p RuntimeWatchdogUSec --value 2>/dev/null)
+if [[ -n $wd && $wd != 0 && $wd != infinity ]]; then
+    ok "hardware watchdog on ($wd): a frozen Pi restarts by itself"
+else
+    warn "hardware watchdog is off - run: sudo bash $SRC/install.sh"
+fi
+nclog=/var/lib/piradio-netcheck/actions.log
+if [[ -s $nclog ]]; then
+    since=$(date -d '7 days ago' '+%F %T')
+    steps=$(awk -v s="$since" '($1" "$2) >= s && !/connection back/' "$nclog" | wc -l)
+    if [[ $steps -gt 0 ]]; then
+        warn "the network check stepped in $steps time(s) in the last 7 days:"
+        awk -v s="$since" '($1" "$2) >= s' "$nclog" | tail -n 6 | while read -r line; do info "$line"; done
+    else
+        ok "the network check has not needed to step in for 7 days"
+    fi
+else
+    ok "the network check has never needed to step in"
+fi
+boots=$(journalctl --list-boots --no-pager 2>/dev/null | tail -n +2 | wc -l)
+if [[ -d /var/log/journal ]]; then
+    info "saved log is on: $boots start(s) recorded; after an unexpected stop, see: journalctl -b -1 -n 40 --no-pager"
+fi
+
 if grep -q '^PIRADIO_DISPLAY="1"' /etc/default/piradio 2>/dev/null; then
     section "Screen and buttons (Display HAT Mini)"
     if [[ -e /dev/spidev0.1 ]]; then

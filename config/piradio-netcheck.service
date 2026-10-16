@@ -1,0 +1,6 @@
+[Unit]
+Description=PiRadio network check (restarts a hung Wi-Fi)
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/piradio-netcheck

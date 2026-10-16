@@ -223,7 +223,7 @@ fi
 
 echo "== 1/6  Installing packages"
 apt-get update
-apt-get install -y mpd mpc alsa-utils curl python3-flask python3-mpd python3-waitress
+apt-get install -y mpd mpc alsa-utils curl iputils-ping iw python3-flask python3-mpd python3-waitress
 
 echo "   Turning on automatic updates (nightly, around 11 PM)"
 apt-get install -y unattended-upgrades
@@ -369,6 +369,40 @@ cp "$HERE/config/piradio.service" /etc/systemd/system/piradio.service
 systemctl daemon-reload
 systemctl enable piradio
 systemctl restart piradio
+
+echo "== Keeping it on: Wi-Fi power saving, network check, watchdog"
+# The Pi 4's Wi-Fi can hang with power saving on, leaving the Pi running but
+# unreachable and silent. Power saving off, at once and for every connection.
+if [ -d /etc/NetworkManager/conf.d ]; then
+  printf '%s\n' '# PiRadio: Wi-Fi power saving off (it can make the Pi 4 Wi-Fi hang).' \
+    '[connection]' 'wifi.powersave = 2' > /etc/NetworkManager/conf.d/20-piradio-wifi-powersave.conf
+  iw dev wlan0 set power_save off 2>/dev/null || true
+  echo "   Wi-Fi power saving: off"
+fi
+# If the router stops answering anyway: restart the network, then the Wi-Fi
+# driver, then the Pi (see config/netcheck.sh).
+install -m 755 "$HERE/config/netcheck.sh" /usr/local/bin/piradio-netcheck
+cp "$HERE/config/piradio-netcheck.service" "$HERE/config/piradio-netcheck.timer" /etc/systemd/system/
+systemctl daemon-reload
+systemctl enable --now piradio-netcheck.timer >/dev/null 2>&1
+echo "   Network check: every minute"
+# The hardware watchdog restarts the Pi if it freezes completely.
+if [ -e /dev/watchdog ]; then
+  mkdir -p /etc/systemd/system.conf.d
+  printf '%s\n' '# PiRadio: restart the Pi if it freezes.' '[Manager]' 'RuntimeWatchdogSec=15s' 'RebootWatchdogSec=2min' \
+    > /etc/systemd/system.conf.d/50-piradio-watchdog.conf
+  systemctl daemon-reexec
+  echo "   Hardware watchdog: on (15 seconds)"
+fi
+
+# Keep the system log across restarts (capped at 50 MB), so the reason for an
+# unexpected stop can be looked up afterwards.
+mkdir -p /etc/systemd/journald.conf.d
+printf '%s\n' '# PiRadio: keep the log across restarts.' '[Journal]' 'Storage=persistent' 'SystemMaxUse=50M' \
+  > /etc/systemd/journald.conf.d/50-piradio-persistent.conf
+systemctl restart systemd-journald
+journalctl --flush 2>/dev/null || true
+echo "   System log: kept across restarts (up to 50 MB)"
 
 # Screen and buttons (Pimoroni Display HAT Mini), only when asked for.
 cp "$HERE/config/piradio-display.service" /etc/systemd/system/piradio-display.service
