@@ -207,6 +207,16 @@ It starts again by itself when you plug it back in, and is ready in under a minu
 
 After a power cut the Pi also restarts by itself; that is nearly always fine.
 
+**Recovering by itself.** In testing, a Raspberry Pi 4 on Wi-Fi now and then dropped off the network and stopped, with only the red light on, until it was unplugged. The installer sets up three things so it comes back without help:
+
+| What | Does | Why |
+|---|---|---|
+| Wi-Fi power saving off | Keeps the Wi-Fi fully awake | Power saving is a known cause of Pi 4 Wi-Fi hangs |
+| Network check, every minute | If the router doesn't answer for 3 minutes, restarts the network; at 5 minutes, reloads the Wi-Fi driver; at 8, restarts the Pi (at most once every 6 hours, so a router that's switched off doesn't cause repeated restarts) | Catches a hung Wi-Fi while the rest of the Pi keeps running |
+| Hardware watchdog | Restarts the Pi within about 15 seconds if it freezes completely | Catches a full freeze, which nothing running on the Pi can |
+
+The system log is also kept across restarts (up to 50 MB), so the reason for an unexpected stop can be looked up. The health check's "Staying on" section shows that all of this is active, and lists any time the network check had to step in during the last week.
+
 ## Keeping it updated
 
 Updates are automatic. The installer sets the Pi to check every night around 11 PM and install whatever is available: the system, the radio player, and Spotify Connect. If an update needs a restart, the Pi restarts itself at 3 AM. Your presets are not affected.
@@ -331,6 +341,7 @@ For a specific problem:
 | PiRadio missing in Spotify | `sudo systemctl status raspotify` and `journalctl -u raspotify -n 30`. Phone and Pi must be on the same Wi-Fi network. |
 | Spotify shows playing but silent, or radio keeps playing under Spotify | Look at `journalctl -u raspotify -n 30`. The likely cause is Raspotify's security sandbox blocking the audio output or the hand-over script (`/usr/local/bin/piradio-spotify-event`). |
 | Health check says "an install was left unfinished", or the update log shows `update-initramfs: failed` and "failed to determine device for /" | A Pi set up with an earlier `--fast-boot`. Run `sudo bash ~/PiRadioAux/install.sh` (it adds the missing setting), then `sudo dpkg --configure -a`. |
+| Page doesn't load and the Pi shows only its red light | It stopped. Unplug and replug it. Then, on the Pi: `journalctl --list-boots --no-pager \| tail -n 3` and `journalctl -b -1 -n 40 --no-pager` show what it logged just before stopping. The health check's "Staying on" section should show all OK. |
 | Hum through the radio | A ground loop isolator (about $10) on the audio cable. |
 
 ## What's in the folder
@@ -351,6 +362,7 @@ For a specific problem:
 | `config/mpd.conf` | Radio player settings |
 | `config/spotify-event.sh` | Hands over to Spotify: stops the radio and tells the preset page |
 | `config/piradio.service` | Starts the preset page on boot |
+| `config/netcheck.sh`, `config/piradio-netcheck.*` | The network check that restarts a hung Wi-Fi, see [Leave the Pi on](#leave-the-pi-on) |
 | `display.py`, `config/piradio-display.service` | Optional screen and buttons, see [Screen and buttons](#screen-and-buttons-optional) |
 
 On the Pi the app lives in `/opt/piradio`, and its presets in `/opt/piradio/presets.json`.
