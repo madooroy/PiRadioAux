@@ -8,6 +8,7 @@ import json
 import os
 import re
 import shlex
+import socket
 import subprocess
 import threading
 import time
@@ -26,6 +27,9 @@ BASE = Path(__file__).resolve().parent
 PRESETS_FILE = Path(os.environ.get("PIRADIO_PRESETS", BASE / "presets.json"))
 # Songs saved with the heart on the page.
 FAVORITES_FILE = Path(os.environ.get("PIRADIO_FAVORITES", PRESETS_FILE.with_name("favorites.json")))
+# The station playing right now, kept on the card so it can be picked up again
+# after an unexpected restart (a freeze, a power cut, the network check).
+RESUME_FILE = Path(os.environ.get("PIRADIO_RESUME", PRESETS_FILE.with_name("resume.json")))
 MAX_FAVORITES = 500
 MPD_HOST = os.environ.get("MPD_HOST", "localhost")
 MPD_PORT = int(os.environ.get("MPD_PORT", "6600"))
@@ -204,6 +208,19 @@ def start_stream(client, url):
     client.play(0)
 
 
+def _remember(preset):
+    """Keep the station that is playing on the card (or forget it, with None)."""
+    try:
+        if preset:
+            tmp = RESUME_FILE.with_suffix(".tmp")
+            tmp.write_text(json.dumps(preset, ensure_ascii=False))
+            tmp.replace(RESUME_FILE)
+        else:
+            RESUME_FILE.unlink(missing_ok=True)
+    except OSError:
+        app.logger.warning("could not save the station for after a restart")
+
+
 def want(preset):
     """Remember (or forget, with None) the station the watchdog should keep alive."""
     global _wanted, _notice
@@ -211,6 +228,49 @@ def want(preset):
         _wanted = preset
         _notice = ""
         _watch.update(elapsed=None, stalled=0, restarts=0, next_try=0.0, recovering=False, played=False)
+        _remember(preset)
+
+
+def _host_resolves(url):
+    try:
+        host = urllib.parse.urlsplit(url).hostname
+        return bool(host) and bool(socket.getaddrinfo(host, None))
+    except (OSError, ValueError):
+        return False
+
+
+def resume_after_restart(wait=120, step=2, sleep=time.sleep):
+    """Play again the station that was playing when this Pi stopped unexpectedly.
+
+    Stop, Power off, Spotify taking over and giving up on a station all clear
+    the saved station, so after any of those the radio stays quiet, as before.
+    Waits (up to `wait` seconds) for the network, so a slow Wi-Fi at start-up
+    doesn't count against the station. Returns True if it started the station.
+    """
+    global _last_preset
+    try:
+        saved = json.loads(RESUME_FILE.read_text())
+    except (OSError, ValueError):
+        return False
+    presets = load_presets()
+    i = saved.get("index") if isinstance(saved, dict) else None
+    if not isinstance(i, int) or not 0 <= i < len(presets) or presets[i]["url"] != saved.get("url"):
+        _remember(None)   # the presets have changed since: nothing sensible to resume
+        return False
+    waited = 0
+    while not _host_resolves(saved["url"]) and waited < wait:
+        sleep(step)
+        waited += step
+    with _play_lock:
+        # Someone may have chosen something else (or Spotify) in the meantime.
+        if _wanted is not None or spotify_status():
+            return False
+        with mpd() as client:
+            start_stream(client, saved["url"])
+        _last_preset = i
+        want({"index": i, "url": saved["url"], "name": presets[i].get("name", "")})
+    app.logger.warning("resumed %s after a restart", presets[i].get("name") or saved["url"])
+    return True
 
 
 def watchdog_tick(now=None):
@@ -244,6 +304,7 @@ def watchdog_tick(now=None):
                 # It has never produced sound since it was tapped: stop trying.
                 app.logger.warning("giving up on %s after %d attempts", wanted["url"], _watch["restarts"] + 1)
                 _wanted = None
+                _remember(None)
                 _watch.update(recovering=False)
                 _notice = f"{wanted.get('name') or 'That station'} couldn't be played."
                 try:
@@ -287,6 +348,14 @@ def clear_stale_error():
 
 
 def watchdog_loop():
+    # First, pick up a station that was playing when the Pi stopped unexpectedly.
+    for _ in range(30):   # the player may still be starting
+        try:
+            resume_after_restart()
+            break
+        except Exception as exc:
+            app.logger.warning("resume: %s", exc)
+            time.sleep(2)
     # Clear a leftover start-up error straight away, so the page never shows it,
     # and twice more in case the player was still failing when this began.
     tidy_left = 3
