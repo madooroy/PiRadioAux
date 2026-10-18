@@ -253,12 +253,20 @@ fi
 nclog=/var/lib/piradio-netcheck/actions.log
 if [[ -s $nclog ]]; then
     since=$(date -d '7 days ago' '+%F %T')
-    steps=$(awk -v s="$since" '($1" "$2) >= s && !/connection back/' "$nclog" | wc -l)
-    if [[ $steps -gt 0 ]]; then
-        warn "the network check stepped in $steps time(s) in the last 7 days:"
-        awk -v s="$since" '($1" "$2) >= s' "$nclog" | tail -n 6 | while read -r line; do info "$line"; done
+    recent=$(awk -v s="$since" '($1" "$2) >= s' "$nclog")
+    # Restarting the network is routine: the router restarting (some mesh systems
+    # do so every night) also triggers it. Reloading the Wi-Fi driver or
+    # restarting the Pi means the connection didn't come back by itself.
+    serious=$(grep -cE 'Wi-Fi driver|restarting the Pi|not restarting the Pi' <<<"$recent")
+    routine=$(grep -c 'restarting the network' <<<"$recent")
+    if [[ $serious -gt 0 ]]; then
+        warn "the network check had to go beyond a network restart $serious time(s) in the last 7 days:"
+        grep -E 'Wi-Fi driver|restarting the Pi' <<<"$recent" | tail -n 6 | while read -r line; do info "$line"; done
     else
-        ok "the network check has not needed to step in for 7 days"
+        ok "the network check has not needed to reload the Wi-Fi or restart the Pi for 7 days"
+    fi
+    if [[ $routine -gt 0 ]]; then
+        info "network restarted $routine time(s) in 7 days after the router went away, last: $(grep 'restarting the network' <<<"$recent" | tail -n 1 | cut -c1-16)"
     fi
 else
     ok "the network check has never needed to step in"
