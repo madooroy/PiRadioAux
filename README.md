@@ -277,7 +277,7 @@ Things to know:
 
 With a [Pimoroni Display HAT Mini](https://shop.pimoroni.com/products/display-hat-mini) on the Pi, you can see what is playing and work the radio without a phone. It is a 2-inch screen with four buttons and a small light, and it presses onto the Pi's 40-pin header without soldering.
 
-> **Not yet tried on the real board.** The program has been checked without the hardware (`tests/test_display.py`), and these instructions will be updated after the first real install.
+Tested on a Raspberry Pi 4 with Raspberry Pi OS Lite (trixie).
 
 The screen shows the preset number and station, then the artist and the song, in large type. It does the same for Spotify. The volume is shown along the bottom.
 
@@ -304,7 +304,7 @@ sudo bash ~/PiRadioAux/install.sh --display
 sudo reboot
 ```
 
-The restart is needed once, to switch on the Pi's SPI connection, which the screen uses. After that, updates keep the screen as it is.
+The restart is needed once, to switch on the Pi's SPI connection, which the screen uses. The installer switches it on without its MISO (data-in) line, `dtoverlay=spi0-2cs,no_miso` in `config.txt`: the screen uses that pin, GPIO 9, for something else, and with the usual `dtparam=spi=on` the Pi won't let go of it, so the screen stays blank. After that, updates keep the screen as it is.
 
 | Command | Does |
 |---|---|

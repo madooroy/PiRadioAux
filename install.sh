@@ -104,14 +104,24 @@ set_net_install() {
 }
 
 # The Display HAT Mini's screen is driven over SPI, which is off on a new card.
+# Its data/command line is GPIO 9, which is also SPI's MISO (data-in) line; the
+# screen never sends data back, so SPI is switched on without MISO (no_miso),
+# leaving GPIO 9 free. With plain dtparam=spi=on, current kernels refuse to hand
+# GPIO 9 over ("Invalid argument") and the screen stays blank.
 SPI_RESTART=0
+SPI_LINE="dtoverlay=spi0-2cs,no_miso"
 ensure_spi() {
   [ -f "$BOOT/config.txt" ] || return 0
-  if grep -Eq '^dtparam=spi=on' "$BOOT/config.txt"; then
+  if grep -qx "$SPI_LINE" "$BOOT/config.txt"; then
     echo "   SPI (for the screen): already on"
+  elif grep -q '^dtparam=spi=on' "$BOOT/config.txt"; then
+    sed -i "s/^dtparam=spi=on.*/$SPI_LINE/" "$BOOT/config.txt"
+    echo "   SPI (for the screen): switched to leave GPIO 9 free (takes effect after a restart)"
+    SPI_RESTART=1
   else
-    { echo; echo "# Screen on the Display HAT Mini (PiRadio install.sh --display)"; echo "[all]"; echo "dtparam=spi=on"; } >> "$BOOT/config.txt"
+    { echo; echo "# Screen on the Display HAT Mini (PiRadio install.sh --display)"; echo "[all]"; echo "$SPI_LINE"; } >> "$BOOT/config.txt"
     echo "   SPI (for the screen): switched on"
+    SPI_RESTART=1
   fi
   [ -e /dev/spidev0.1 ] || SPI_RESTART=1
 }

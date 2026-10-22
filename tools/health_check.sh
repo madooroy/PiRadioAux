@@ -278,8 +278,10 @@ fi
 
 if grep -q '^PIRADIO_DISPLAY="1"' /etc/default/piradio 2>/dev/null; then
     section "Screen and buttons (Display HAT Mini)"
-    if [[ -e /dev/spidev0.1 ]]; then
-        ok "SPI is on (the screen's connection)"
+    if grep -q '^dtparam=spi=on' /boot/firmware/config.txt 2>/dev/null && ! grep -qx 'dtoverlay=spi0-2cs,no_miso' /boot/firmware/config.txt; then
+        bad "SPI is set up with dtparam=spi=on, which keeps GPIO 9 from the screen - run: sudo bash $SRC/install.sh, then sudo reboot"
+    elif [[ -e /dev/spidev0.1 ]]; then
+        ok "SPI is on, without MISO (the screen's connection)"
     else
         bad "SPI is off - restart the Pi once after install.sh --display (sudo reboot)"
     fi
