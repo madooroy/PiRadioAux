@@ -207,7 +207,7 @@ def _button_marks(d):
     Right: volume up, volume down with hold-to-stop.
     """
     lx, rx = RAIL // 2, WIDTH - RAIL // 2
-    top, bottom = 52, HEIGHT - 58
+    top, bottom = 62, 166   # lined up with the buttons on the real HAT (photo, Oct 22)
     # previous preset, and below it the hold mark: heart
     d.polygon([(lx - 8, top + 5), (lx + 8, top + 5), (lx, top - 6)], fill=MUTED)
     _heart(d, lx, top + 24, 12, DIM)
