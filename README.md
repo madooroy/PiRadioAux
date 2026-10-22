@@ -207,12 +207,13 @@ It starts again by itself when you plug it back in, and is ready in under a minu
 
 After a power cut the Pi also restarts by itself; that is nearly always fine.
 
-**Recovering by itself.** In testing, a Raspberry Pi 4 on Wi-Fi now and then dropped off the network and stopped, with only the red light on, until it was unplugged. The installer sets up three things so it comes back without help:
+**Recovering by itself.** In testing, a Raspberry Pi 4 on Wi-Fi now and then dropped off the network and stopped, with only the red light on, until it was unplugged. The installer sets up these so it comes back without help:
 
 | What | Does | Why |
 |---|---|---|
 | Wi-Fi power saving off | Keeps the Wi-Fi fully awake | Power saving is a known cause of Pi 4 Wi-Fi hangs |
 | Network check, every minute | If the router doesn't answer for 3 minutes, restarts the network; at 5 minutes, reloads the Wi-Fi driver; at 8, restarts the Pi (at most once every 6 hours, so a router that's switched off doesn't cause repeated restarts) | Catches a hung Wi-Fi while the rest of the Pi keeps running |
+| Copy of the Wi-Fi settings | Kept by the network check while the Wi-Fi works, and put back within a minute if the settings go missing | Once, after a power-off, the Wi-Fi settings came back as empty files, and the Pi had no network to join |
 | Hardware watchdog | Restarts the Pi within about 15 seconds if it freezes completely | Catches a full freeze, which nothing running on the Pi can |
 
 **After a restart,** the radio plays again if it was playing when the Pi stopped: after a freeze, a power cut, a restart by the network check, or an update. If it was stopped, or you used Power off, it comes back quiet. It waits up to two minutes for the network before starting the station. The system log is also kept across restarts (up to 50 MB), so the reason for an unexpected stop can be looked up. The health check's "Staying on" section shows that all of this is active, and warns if, in the last week, the network check had to go further than restarting the network. A plain network restart is routine: a router that restarts itself (some mesh systems do so every night) also triggers one, and the health check just notes it.

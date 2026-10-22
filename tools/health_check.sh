@@ -244,6 +244,14 @@ if [[ $(systemctl is-active piradio-netcheck.timer 2>/dev/null) == active ]]; th
 else
     bad "network check is not running - run: sudo bash $SRC/install.sh"
 fi
+if [[ -d /sys/class/net/wlan0 ]]; then
+    kept=$(find /var/lib/piradio-netcheck/wifi-backup -type f -size +0 2>/dev/null | wc -l)
+    if [[ $kept -gt 0 ]]; then
+        ok "a copy of the Wi-Fi settings is kept, to put back if they go missing"
+    else
+        warn "no copy of the Wi-Fi settings kept yet (the network check makes one while the Wi-Fi works; check again in a few minutes)"
+    fi
+fi
 wd=$(systemctl show -p RuntimeWatchdogUSec --value 2>/dev/null)
 if [[ -n $wd && $wd != 0 && $wd != infinity ]]; then
     ok "hardware watchdog on ($wd): a frozen Pi restarts by itself"
