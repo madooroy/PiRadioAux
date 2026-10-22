@@ -488,20 +488,59 @@ PIN_DC, PIN_BACKLIGHT = 9, 13
 SPI_PORT, SPI_CS = 0, 1
 
 
+class GpiodOutputs:
+    """Output pins claimed straight through the kernel (libgpiod), as Pimoroni's own
+    st7789 library does. Needed for the screen's data/command pin, GPIO 9: it is
+    also the SPI connection's MISO pin, and gpiozero refuses to claim it while SPI
+    is on ("Invalid argument"). The kernel interface lets it be driven anyway."""
+
+    def __init__(self, names):
+        import glob
+        import gpiod
+        from gpiod.line import Direction, Value
+        self._value = Value
+        for path in sorted(glob.glob("/dev/gpiochip*")):
+            try:
+                with gpiod.Chip(path) as chip:
+                    offsets = {n: chip.line_offset_from_id(f"GPIO{n}") for n in names}
+            except (OSError, ValueError):
+                continue
+            break
+        else:
+            raise RuntimeError(f"no GPIO chip has pins {names}")
+        self._offsets = offsets
+        settings = gpiod.LineSettings(direction=Direction.OUTPUT, output_value=Value.INACTIVE)
+        self._req = gpiod.request_lines(path, consumer="piradio-display",
+                                        config={tuple(offsets.values()): settings})
+        self._state = {n: False for n in names}
+
+    def set(self, name, on):
+        self._req.set_value(self._offsets[name], self._value.ACTIVE if on else self._value.INACTIVE)
+        self._state[name] = bool(on)
+
+    def get(self, name):
+        return self._state[name]
+
+    def release(self):
+        try:
+            self._req.release()
+        except Exception:
+            pass
+
+
 class HatMini:
     """The 320x240 ST7789 screen, four buttons and the RGB light."""
 
     def __init__(self, flip=False):
         import numpy
         import spidev
-        from gpiozero import Button, DigitalOutputDevice, RGBLED
+        from gpiozero import Button, RGBLED
         self.numpy = numpy
         self.flip = flip
         self.spi = spidev.SpiDev(SPI_PORT, SPI_CS)
         self.spi.mode = 0
         self.spi.max_speed_hz = 60_000_000
-        self.dc = DigitalOutputDevice(PIN_DC)
-        self.backlight = DigitalOutputDevice(PIN_BACKLIGHT)
+        self.pins = GpiodOutputs((PIN_DC, PIN_BACKLIGHT))
         self.led = RGBLED(PIN_LED_R, PIN_LED_G, PIN_LED_B, active_high=False)
         # Buttons by where they are when the picture is the right way up.
         a, b, x, y = (Button(p, pull_up=True, bounce_time=0.03) for p in (PIN_A, PIN_B, PIN_X, PIN_Y))
@@ -509,13 +548,13 @@ class HatMini:
             a, b, x, y = y, x, b, a
         self.top_left, self.bottom_left, self.top_right, self.bottom_right = a, b, x, y
         self._init_panel()
-        self.backlight.on()
+        self.pins.set(PIN_BACKLIGHT, True)
 
     def _cmd(self, c, *data):
-        self.dc.off()
+        self.pins.set(PIN_DC, False)
         self.spi.writebytes([c])
         if data:
-            self.dc.on()
+            self.pins.set(PIN_DC, True)
             self.spi.writebytes(list(data))
 
     def _init_panel(self):
@@ -548,12 +587,12 @@ class HatMini:
         self._cmd(0x2A, 0, 0, (WIDTH - 1) >> 8, (WIDTH - 1) & 0xFF)
         self._cmd(0x2B, 0, 0, (HEIGHT - 1) >> 8, (HEIGHT - 1) & 0xFF)
         self._cmd(0x2C)
-        self.dc.on()
+        self.pins.set(PIN_DC, True)
         self.spi.writebytes2(data)
 
     def screen(self, on):
-        if on != self.backlight.is_active:
-            self.backlight.value = on
+        if on != self.pins.get(PIN_BACKLIGHT):
+            self.pins.set(PIN_BACKLIGHT, on)
 
     def light(self, colour):
         self.led.color = {"off": (0, 0, 0), "amber": (1, 0.35, 0), "red": (1, 0, 0)}[colour]
@@ -561,11 +600,12 @@ class HatMini:
     def close(self):
         try:
             self.light("off")
-            self.backlight.off()
+            self.pins.set(PIN_BACKLIGHT, False)
             self._cmd(0x28)     # display off
             self._cmd(0x10)     # sleep
         except Exception:
             pass
+        self.pins.release()
 
 
 class Preview:

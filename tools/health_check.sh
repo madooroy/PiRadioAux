@@ -288,8 +288,8 @@ if grep -q '^PIRADIO_DISPLAY="1"' /etc/default/piradio 2>/dev/null; then
     else
         bad "piradio-display is not running - see: journalctl -u piradio-display -b --no-pager | tail -n 30"
     fi
-    if python3 -c "import PIL, numpy, spidev, gpiozero" 2>/dev/null; then
-        ok "Python libraries present (pil, numpy, spidev, gpiozero)"
+    if python3 -c "import PIL, numpy, spidev, gpiozero, gpiod" 2>/dev/null; then
+        ok "Python libraries present (pil, numpy, spidev, gpiozero, gpiod)"
     else
         bad "Python libraries for the screen missing - run: sudo bash $SRC/install.sh --display"
     fi

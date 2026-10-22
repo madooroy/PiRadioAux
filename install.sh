@@ -409,7 +409,7 @@ cp "$HERE/config/piradio-display.service" /etc/systemd/system/piradio-display.se
 systemctl daemon-reload
 if [ "$DISPLAY_ON" = 1 ]; then
   echo "== Screen and buttons (Display HAT Mini)"
-  apt-get install -y python3-pil python3-numpy python3-spidev python3-gpiozero python3-lgpio fonts-dejavu-core
+  apt-get install -y python3-pil python3-numpy python3-spidev python3-gpiozero python3-lgpio python3-libgpiod fonts-dejavu-core
   ensure_spi
   systemctl enable piradio-display
   if [ "$SPI_RESTART" = 1 ]; then
