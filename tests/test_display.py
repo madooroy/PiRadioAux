@@ -116,7 +116,7 @@ assert v["led"] == "red" and v["message_level"] == "bad" and not v["active"]
 v = D.describe(dict(st, playing=False, current=None, error="problem"), UI)
 assert v["led"] == "red" and v["message"] == "Player: problem"
 v = D.describe(dict(st, playing=False, current=None, spotify={"state": "paused", "title": "X – Y"}), UI)
-assert v["header"] == "SPOTIFY · PAUSED" and v["song"] == "Y" and v["led"] == "off"
+assert v["header"] == "SPOTIFY CONNECT · PAUSED" and v["song"] == "Y" and v["led"] == "off"
 v = D.describe(dict(st, playing=False, current=None), UI)
 assert v["header"] == "STOPPED" and v["led"] == "off" and "starts the radio" in v["message"]
 UI.started = D.time.time()

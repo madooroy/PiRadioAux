@@ -122,7 +122,7 @@ def describe(status, ui):
         return view
     spotify = status.get("spotify")
     if spotify:
-        view["header"] = "SPOTIFY" if spotify.get("state") == "playing" else "SPOTIFY · PAUSED"
+        view["header"] = "SPOTIFY CONNECT" if spotify.get("state") == "playing" else "SPOTIFY CONNECT · PAUSED"
         view["station"] = "Spotify"
         view["artist"], view["song"] = split_title(spotify.get("title"))
         view["volume"] = -1   # Spotify's volume is its own, set in the Spotify app
