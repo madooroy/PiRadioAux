@@ -30,6 +30,10 @@ FAVORITES_FILE = Path(os.environ.get("PIRADIO_FAVORITES", PRESETS_FILE.with_name
 # The station playing right now, kept on the card so it can be picked up again
 # after an unexpected restart (a freeze, a power cut, the network check).
 RESUME_FILE = Path(os.environ.get("PIRADIO_RESUME", PRESETS_FILE.with_name("resume.json")))
+# The station played most recently, kept even after Stop or Power off, so the
+# screen's buttons can offer it again after a restart. Matched by address, so it
+# survives reordering the presets.
+LAST_FILE = Path(os.environ.get("PIRADIO_LAST", PRESETS_FILE.with_name("last.json")))
 MAX_FAVORITES = 500
 MPD_HOST = os.environ.get("MPD_HOST", "localhost")
 MPD_PORT = int(os.environ.get("MPD_PORT", "6600"))
@@ -229,6 +233,32 @@ def want(preset):
         _notice = ""
         _watch.update(elapsed=None, stalled=0, restarts=0, next_try=0.0, recovering=False, played=False)
         _remember(preset)
+        if preset:
+            _save_last(preset)
+
+
+def _save_last(preset):
+    try:
+        if _last_url() == preset["url"]:
+            return   # unchanged: spare the card a write
+        tmp = LAST_FILE.with_suffix(".tmp")
+        tmp.write_text(json.dumps({"url": preset["url"], "name": preset.get("name", "")}, ensure_ascii=False))
+        tmp.replace(LAST_FILE)
+    except OSError:
+        app.logger.warning("could not save the last station")
+
+
+def _last_url():
+    try:
+        return json.loads(LAST_FILE.read_text()).get("url") or None
+    except (OSError, ValueError, AttributeError):
+        return None
+
+
+def last_station(presets):
+    """Index of the preset played most recently (even before a restart), or None."""
+    url = _last_url()
+    return next((i for i, p in enumerate(presets) if url and p["url"] == url), None)
 
 
 def _host_resolves(url):
@@ -599,6 +629,7 @@ def current_status():
         "notice": _notice,
         "spotify": spotify,
         "liked": is_favorite(title or (spotify or {}).get("title", "")),   # is the song showing a saved favorite?
+        "last": last_station(presets),   # most recently played preset, kept across restarts
         "presets": presets,
     }
 

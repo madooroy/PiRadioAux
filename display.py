@@ -372,6 +372,8 @@ class Radio:
             if status:
                 if status.get("playing") and status.get("current") is not None:
                     self.last_preset = status["current"]
+                elif status.get("last") is not None:
+                    self.last_preset = status["last"]   # remembered by the Pi, also across restarts
                 if self.volume is None or self.clock() - self._volume_at > 2:
                     self.volume = status.get("volume")
         return status

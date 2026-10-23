@@ -292,7 +292,7 @@ The screen shows the preset number and station, then the artist and the song, in
 The marks sit in narrow strips down each side of the screen, beside their buttons.
 
 - **Choosing a station:** press previous or next as many times as you like. The station starts one second after the last press, so you can skip past several without each one connecting.
-- **From Stopped:** either previous or next brings back the last station you listened to.
+- **From Stopped:** either previous or next brings back the last station you listened to, even after the Pi has been off or restarted.
 - **Saving a song** works the same as the heart on the phone page, for radio and for Spotify. A heart appears beside the volume while the song showing is in your Favorites. Holding on a song that's already saved changes nothing, and songs are removed from the phone page.
 - **Spotify's volume** is set in the Spotify app. The volume buttons only change the radio's.
 - **The light** stays off while all is well. It shows amber while a station is connecting or reconnecting, and red when a station couldn't be played or the page can't be reached.

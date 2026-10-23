@@ -61,3 +61,18 @@ out = [A.watchdog_tick(now=t) for t in range(10, 200, 10)]
 assert "gave up" in out and saved() is None, out
 A.start_stream = real
 print("no resume after giving up passed")
+
+# the last station is kept after Stop and Power off, and after a restart, for the screen's buttons
+c.put("/api/presets", json=[{"name": "A", "url": "http://x/a"}, {"name": "B", "url": "http://x/b"}])
+c.post("/api/play/1"); c.post("/api/stop"); restart()
+st = c.get("/api/status").get_json()
+assert st["playing"] is False and st["last"] == 1, st
+c.post("/api/play/0"); c.post("/api/poweroff"); restart()
+assert c.get("/api/status").get_json()["last"] == 0
+# matched by address, so reordering the presets keeps it right
+c.put("/api/presets", json=[{"name": "B", "url": "http://x/b"}, {"name": "A", "url": "http://x/a"}])
+assert c.get("/api/status").get_json()["last"] == 1
+# removed from the presets: nothing to offer
+c.put("/api/presets", json=[{"name": "B", "url": "http://x/b"}])
+assert c.get("/api/status").get_json()["last"] is None
+print("last station kept passed")

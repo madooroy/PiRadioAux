@@ -195,3 +195,10 @@ class TimedApi(D.Api):
 assert TimedApi().status() is None and seen["/api/status"] == D.STATUS_TIMEOUT <= 3
 assert D.Preview("/tmp/piradio-preview-test").close(keep_picture=True) is None
 print("shutdown screen checks passed")
+
+# after a restart the screen offers the station the Pi remembers, not preset 1
+r, api, clock = make()
+api.st["last"] = 2; r.refresh()
+assert r.last_preset == 2 and "Bravo Radio" in r.frame()[0]["message"]
+r.step(+1); assert r.tuning == 2
+print("remembered station passed")
