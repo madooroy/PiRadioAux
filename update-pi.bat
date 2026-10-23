@@ -7,8 +7,11 @@ if not "%~1"=="" set "PI=%~1"
 set "SRC=%~dp0"
 set "SRC=%SRC:~0,-1%"
 for %%I in ("%SRC%") do set "DIR=%%~nxI"
+for %%I in ("%SRC%\..") do set "PARENT=%%~fI"
 echo Copying "%SRC%" to %PI% ...
-scp -r "%SRC%" %PI%:~
+rem tar (built into Windows 10 and 11) instead of scp: it leaves out Git's own
+rem folder, whose read-only files make a second scp copy fail.
+tar -C "%PARENT%" --exclude=.git --exclude=__pycache__ -cf - "%DIR%" | ssh %PI% "tar --warning=no-unknown-keyword -xf - -C ~"
 if errorlevel 1 goto failed
 echo.
 echo Installing on the Pi ...

@@ -1,4 +1,8 @@
 __pycache__/
 *.pyc
-# Your own stations, used by install.sh in place of the examples
+# Kept on your own computer only, never uploaded:
+# your own stations, used by install.sh in place of the examples
 presets.local.json
+# your command sheet and favorites backup
+COMMANDS.md
+favorites-backup.json
