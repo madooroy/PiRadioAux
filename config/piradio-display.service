@@ -1,6 +1,7 @@
 [Unit]
 Description=PiRadio screen and buttons (Pimoroni Display HAT Mini)
-After=piradio.service
+# No After=piradio.service: that waits for the network, and the screen should light
+# up ("Starting...") early in boot. display.py copes with the page not answering yet.
 Wants=piradio.service
 
 [Service]
