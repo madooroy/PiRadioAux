@@ -175,3 +175,23 @@ for view in (D.describe(st, UI), D.describe(None, UI),
     assert img.size == (320, 240)
     D.render(view)
 print("drawing checks passed")
+
+# --- shutdown screens, the light level and the status timeout
+for img in (D.switching_off_screen(), D.final_screen("poweroff"), D.final_screen("halt"), D.final_screen("reboot")):
+    assert img.size == (320, 240) and img.getbbox() is not None
+assert D.final_screen("reboot").tobytes() != D.final_screen("poweroff").tobytes()
+assert 0 < D.LED_LEVEL <= 0.5, D.LED_LEVEL
+class LedHat(D.HatMini):
+    def __init__(self):
+        self.led = type("Led", (), {"color": None})()
+h = LedHat(); h.light("red"); assert h.led.color == (D.LED_LEVEL, 0, 0)
+h.light("off"); assert h.led.color == (0, 0, 0)
+h.led = None; h.light("red")      # the shutdown hook has no light: nothing happens
+seen = {}
+class TimedApi(D.Api):
+    def _call(self, method, path, body=None, timeout=8):
+        seen[path] = timeout
+        raise OSError("down")
+assert TimedApi().status() is None and seen["/api/status"] == D.STATUS_TIMEOUT <= 3
+assert D.Preview("/tmp/piradio-preview-test").close(keep_picture=True) is None
+print("shutdown screen checks passed")

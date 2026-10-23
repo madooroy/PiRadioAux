@@ -1,0 +1,13 @@
+#!/bin/sh
+# Installed in /usr/lib/systemd/system-shutdown/ by install.sh --display.
+# systemd runs this at the very end of a shutdown, after every service has stopped and
+# the SD card has been made read-only: the moment the Pi is about to stop. $1 is
+# poweroff, halt, reboot or kexec. It draws "Safe to unplug" (or "Restarting...").
+[ -f /opt/piradio/display.py ] || exit 0
+if [ -f /etc/default/piradio ]; then
+    set -a; . /etc/default/piradio; set +a
+fi
+[ "${PIRADIO_DISPLAY:-0}" = 1 ] || exit 0
+cd /opt/piradio || exit 0
+PYTHONDONTWRITEBYTECODE=1 timeout 8 /usr/bin/python3 /opt/piradio/display.py --final "$1" >/dev/null 2>&1
+exit 0

@@ -297,6 +297,8 @@ The marks sit in narrow strips down each side of the screen, beside their button
 - **Spotify's volume** is set in the Spotify app. The volume buttons only change the radio's.
 - **The light** stays off while all is well. It shows amber while a station is connecting or reconnecting, and red when a station couldn't be played or the page can't be reached.
 - **The screen goes dark** a minute after playing stops. Any button wakes it.
+- **Switching off:** after Power off on the phone page (or `sudo poweroff`), the screen shows "Switching off…" and then "Safe to unplug" once the Pi has fully stopped. Wait for that before pulling the power. A restart shows "Restarting…" instead.
+- **The light is dimmed** to a fifth of full brightness. To change it, add `PIRADIO_LED_LEVEL="0.5"` (anything from 0 to 1) to `/etc/default/piradio`, then `sudo systemctl restart piradio-display`.
 
 To set it up, fit the HAT with the Pi switched off and unplugged, then:
 
@@ -364,7 +366,7 @@ For a specific problem:
 | `config/spotify-event.sh` | Hands over to Spotify: stops the radio and tells the preset page |
 | `config/piradio.service` | Starts the preset page on boot |
 | `config/netcheck.sh`, `config/piradio-netcheck.*` | The network check that restarts a hung Wi-Fi, see [Leave the Pi on](#leave-the-pi-on) |
-| `display.py`, `config/piradio-display.service` | Optional screen and buttons, see [Screen and buttons](#screen-and-buttons-optional) |
+| `display.py`, `config/piradio-display.service`, `config/piradio-display.shutdown` | Optional screen and buttons, see [Screen and buttons](#screen-and-buttons-optional) |
 
 On the Pi the app lives in `/opt/piradio`, and its presets in `/opt/piradio/presets.json`.
 

@@ -19,10 +19,12 @@ program stops, the radio carries on.
 
     python3 display.py              run on the HAT (what the service does)
     python3 display.py --preview D  no hardware: write each new screen to D/screen.png
+    python3 display.py --final KIND last screen as the Pi stops (the shutdown hook)
 """
 import json
 import os
 import signal
+import subprocess
 import sys
 import threading
 import time
@@ -41,6 +43,12 @@ TUNE_DELAY = 1.0        # seconds after the last previous/next press before the 
 SCREEN_OFF_AFTER = 60   # seconds of being stopped before the screen goes dark
 TOAST_TIME = 2.5        # seconds a short message stays on screen
 STARTUP_GRACE = 90      # seconds after start before "can't reach the page" counts as a problem
+STATUS_TIMEOUT = 2      # seconds to wait for the page's status, so a hung page can't freeze the screen
+# The light at full brightness glares; it is driven at this fraction (0 to 1).
+try:
+    LED_LEVEL = max(0.0, min(1.0, float(os.environ.get("PIRADIO_LED_LEVEL", "0.2"))))
+except ValueError:
+    LED_LEVEL = 0.2
 
 # Colours from the preset page's dark theme.
 BG = (28, 24, 20)
@@ -280,22 +288,47 @@ def render(view, toast=""):
     return img
 
 
+def _centred(lines, colours=None):
+    """A plain screen with a few lines of large text in the middle (shutdown screens)."""
+    img = Image.new("RGB", (WIDTH, HEIGHT), BG)
+    d = ImageDraw.Draw(img)
+    fonts = [font(30, True)] + [font(19)] * (len(lines) - 1)
+    colours = colours or [INK] + [MUTED] * (len(lines) - 1)
+    total = sum(f.size + 12 for f in fonts) - 12
+    y = (HEIGHT - total) / 2
+    for text, fnt, colour in zip(lines, fonts, colours):
+        d.text(((WIDTH - d.textlength(text, font=fnt)) / 2, y), text, font=fnt, fill=colour)
+        y += fnt.size + 12
+    return img
+
+
+def switching_off_screen():
+    return _centred(["Switching off…", "Wait for \"Safe to unplug\"", NAME], [WARN, MUTED, MUTED])
+
+
+def final_screen(kind):
+    """The last picture, drawn by the shutdown hook once the card is read-only."""
+    if kind == "reboot":
+        return _centred(["Restarting…", NAME])
+    return _centred(["Safe to unplug", NAME, "Plug back in to start"], [ACCENT, MUTED, MUTED])
+
+
 # ---- Talking to the preset page --------------------------------------------------
 
 class Api:
     def __init__(self, base=BASE_URL):
         self.base = base
 
-    def _call(self, method, path, body=None):
+    def _call(self, method, path, body=None, timeout=8):
         data = json.dumps(body).encode() if body is not None else None
         req = urllib.request.Request(self.base + path, data=data, method=method,
                                      headers={"Content-Type": "application/json"} if data else {})
-        with urllib.request.urlopen(req, timeout=8) as r:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
             return json.loads(r.read() or b"null")
 
     def status(self):
         try:
-            return self._call("GET", "/api/status")
+            return self._call("GET", "/api/status", timeout=STATUS_TIMEOUT)
         except (OSError, ValueError, urllib.error.URLError):
             return None
 
@@ -492,13 +525,19 @@ class GpiodOutputs:
     """Output pins claimed straight through the kernel (libgpiod), as Pimoroni's own
     st7789 library does. Needed for the screen's data/command pin, GPIO 9: it is
     also the SPI connection's MISO pin, and gpiozero refuses to claim it while SPI
-    is on ("Invalid argument"). The kernel interface lets it be driven anyway."""
+    is on ("Invalid argument"). The kernel interface lets it be driven anyway.
 
-    def __init__(self, names):
+    Pins named in `sticky` keep their level after the program lets go of them: when
+    a program exits, the Pi turns its pins back into inputs, so each level is also
+    set as the matching pull-up (high) or pull-down (low). That keeps the backlight
+    lit through shutdown, and dark after a normal stop."""
+
+    def __init__(self, names, sticky=(), initial=None):
         import glob
         import gpiod
-        from gpiod.line import Direction, Value
-        self._value = Value
+        from gpiod.line import Bias, Direction, Value
+        self._gpiod, self._value, self._bias, self._direction = gpiod, Value, Bias, Direction
+        initial = initial or {}
         for path in sorted(glob.glob("/dev/gpiochip*")):
             try:
                 with gpiod.Chip(path) as chip:
@@ -509,44 +548,66 @@ class GpiodOutputs:
         else:
             raise RuntimeError(f"no GPIO chip has pins {names}")
         self._offsets = offsets
-        settings = gpiod.LineSettings(direction=Direction.OUTPUT, output_value=Value.INACTIVE)
-        self._req = gpiod.request_lines(path, consumer="piradio-display",
-                                        config={tuple(offsets.values()): settings})
-        self._state = {n: False for n in names}
+        self._sticky = set(sticky)
+        self._reqs = {n: gpiod.request_lines(path, consumer="piradio-display",
+                                             config={offsets[n]: self._settings(n, initial.get(n, False))})
+                      for n in names}
+        self._state = {n: bool(initial.get(n, False)) for n in names}
+
+    def _settings(self, name, on):
+        kw = {"direction": self._direction.OUTPUT,
+              "output_value": self._value.ACTIVE if on else self._value.INACTIVE}
+        if name in self._sticky:
+            kw["bias"] = self._bias.PULL_UP if on else self._bias.PULL_DOWN
+        return self._gpiod.LineSettings(**kw)
 
     def set(self, name, on):
-        self._req.set_value(self._offsets[name], self._value.ACTIVE if on else self._value.INACTIVE)
+        req, offset = self._reqs[name], self._offsets[name]
+        if name in self._sticky:
+            req.reconfigure_lines({offset: self._settings(name, on)})
+        else:
+            req.set_value(offset, self._value.ACTIVE if on else self._value.INACTIVE)
         self._state[name] = bool(on)
 
     def get(self, name):
         return self._state[name]
 
     def release(self):
-        try:
-            self._req.release()
-        except Exception:
-            pass
+        for req in self._reqs.values():
+            try:
+                req.release()
+            except Exception:
+                pass
 
 
 class HatMini:
     """The 320x240 ST7789 screen, four buttons and the RGB light."""
 
-    def __init__(self, flip=False):
+    def __init__(self, flip=False, controls=True):
+        """controls=False: screen only, no buttons and the light held off (the shutdown
+        hook, which runs when the SD card is already read-only: gpiozero is left out)."""
         import numpy
         import spidev
-        from gpiozero import Button, RGBLED
         self.numpy = numpy
         self.flip = flip
         self.spi = spidev.SpiDev(SPI_PORT, SPI_CS)
         self.spi.mode = 0
         self.spi.max_speed_hz = 60_000_000
-        self.pins = GpiodOutputs((PIN_DC, PIN_BACKLIGHT))
-        self.led = RGBLED(PIN_LED_R, PIN_LED_G, PIN_LED_B, active_high=False)
-        # Buttons by where they are when the picture is the right way up.
-        a, b, x, y = (Button(p, pull_up=True, bounce_time=0.03) for p in (PIN_A, PIN_B, PIN_X, PIN_Y))
-        if flip:
-            a, b, x, y = y, x, b, a
-        self.top_left, self.bottom_left, self.top_right, self.bottom_right = a, b, x, y
+        if controls:
+            from gpiozero import Button, RGBLED
+            self.pins = GpiodOutputs((PIN_DC, PIN_BACKLIGHT), sticky=(PIN_BACKLIGHT,))
+            self.led = RGBLED(PIN_LED_R, PIN_LED_G, PIN_LED_B, active_high=False)
+            # Buttons by where they are when the picture is the right way up.
+            a, b, x, y = (Button(p, pull_up=True, bounce_time=0.03) for p in (PIN_A, PIN_B, PIN_X, PIN_Y))
+            if flip:
+                a, b, x, y = y, x, b, a
+            self.top_left, self.bottom_left, self.top_right, self.bottom_right = a, b, x, y
+        else:
+            # The light is lit by a low pin, so "off" is a high pin that stays high.
+            leds = (PIN_LED_R, PIN_LED_G, PIN_LED_B)
+            self.pins = GpiodOutputs((PIN_DC, PIN_BACKLIGHT) + leds, sticky=(PIN_BACKLIGHT,) + leds,
+                                     initial={p: True for p in leds})
+            self.led = None
         self._init_panel()
         self.pins.set(PIN_BACKLIGHT, True)
 
@@ -595,14 +656,19 @@ class HatMini:
             self.pins.set(PIN_BACKLIGHT, on)
 
     def light(self, colour):
-        self.led.color = {"off": (0, 0, 0), "amber": (1, 0.35, 0), "red": (1, 0, 0)}[colour]
+        if self.led is None:
+            return
+        r, g, b = {"off": (0, 0, 0), "amber": (1, 0.35, 0), "red": (1, 0, 0)}[colour]
+        self.led.color = (r * LED_LEVEL, g * LED_LEVEL, b * LED_LEVEL)
 
-    def close(self):
+    def close(self, keep_picture=False):
+        """keep_picture: the Pi is shutting down, so leave the last picture lit."""
         try:
             self.light("off")
-            self.pins.set(PIN_BACKLIGHT, False)
-            self._cmd(0x28)     # display off
-            self._cmd(0x10)     # sleep
+            if not keep_picture:
+                self.pins.set(PIN_BACKLIGHT, False)
+                self._cmd(0x28)     # display off
+                self._cmd(0x10)     # sleep
         except Exception:
             pass
         self.pins.release()
@@ -625,7 +691,7 @@ class Preview:
     def light(self, colour):
         self.colour = colour
 
-    def close(self):
+    def close(self, keep_picture=False):
         pass
 
 
@@ -671,7 +737,33 @@ def hold_and_tap(button, tap, hold, kick, hold_time=1.5):
     button.when_released = released
 
 
+def system_stopping():
+    """True while the Pi itself is shutting down or restarting."""
+    try:
+        state = subprocess.run(["systemctl", "is-system-running"], capture_output=True, text=True,
+                               timeout=2).stdout.strip()
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return state == "stopping"
+
+
+def final(kind):
+    """Shutdown hook: draw the last screen and keep it lit until the power goes."""
+    hat = HatMini(flip=FLIP, controls=False)
+    hat.show(final_screen(kind))
+    # The pins could be reset once their owner exits. A child keeps them until the
+    # Pi stops; the parent returns at once so the shutdown is not held up.
+    if os.fork() > 0:
+        os._exit(0)
+    os.setsid()
+    while True:
+        time.sleep(3600)
+
+
 def main(argv):
+    if len(argv) > 2 and argv[1] == "--final":
+        final(argv[2])
+        return
     if len(argv) > 2 and argv[1] == "--preview":
         hat = Preview(argv[2])
     else:
@@ -712,7 +804,17 @@ def main(argv):
             wake.wait(0.2)
             wake.clear()
     finally:
-        hat.close()
+        # Stopped because the Pi is shutting down (Power off on the page, SSH, an
+        # overnight restart): say so and keep it lit; the shutdown hook then draws
+        # "Safe to unplug" at the very end. Otherwise the screen goes dark.
+        stopping_pi = system_stopping()
+        if stopping_pi:
+            try:
+                hat.screen(True)
+                hat.show(switching_off_screen())
+            except Exception:
+                pass
+        hat.close(keep_picture=stopping_pi)
 
 
 if __name__ == "__main__":

@@ -4,7 +4,7 @@
 # Options:
 #     --name "Kitchen Radio"   the name shown on the page and in Spotify (default: PiRadio)
 #     --hostname kitchenradio  also rename the Pi on the network (page becomes http://kitchenradio.local)
-#     --fast-boot              shorten start-up for a Pi with no screen (see the README)
+#     --fast-boot              shorten start-up (see the README; the HAT screen is not affected)
 #     --undo-fast-boot         put the start-up settings back, and do nothing else
 #     --display                use a Pimoroni Display HAT Mini (screen and buttons, see the README)
 #     --flip-display           the same, with the picture turned the other way up
@@ -417,10 +417,14 @@ echo "   System log: kept across restarts (up to 50 MB)"
 # Screen and buttons (Pimoroni Display HAT Mini), only when asked for.
 cp "$HERE/config/piradio-display.service" /etc/systemd/system/piradio-display.service
 systemctl daemon-reload
+SHUTDOWN_HOOK=/usr/lib/systemd/system-shutdown/piradio-display.shutdown
 if [ "$DISPLAY_ON" = 1 ]; then
   echo "== Screen and buttons (Display HAT Mini)"
   apt-get install -y python3-pil python3-numpy python3-spidev python3-gpiozero python3-lgpio python3-libgpiod fonts-dejavu-core
   ensure_spi
+  # Draws "Safe to unplug" at the very end of a shutdown.
+  install -D -m 755 "$HERE/config/piradio-display.shutdown" "$SHUTDOWN_HOOK"
+  echo "   Shutdown screen: \"Safe to unplug\" when the Pi has stopped"
   systemctl enable piradio-display
   if [ "$SPI_RESTART" = 1 ]; then
     echo "   The screen starts after a restart:  sudo reboot"
@@ -428,9 +432,12 @@ if [ "$DISPLAY_ON" = 1 ]; then
     systemctl restart piradio-display
   fi
   [ "$FLIP_CHOICE" = 1 ] && echo "   Picture turned the other way up (undo: run install.sh --display)"
-elif systemctl is-enabled --quiet piradio-display 2>/dev/null; then
-  echo "== Screen and buttons: switched off"
-  systemctl disable --now piradio-display
+else
+  rm -f "$SHUTDOWN_HOOK"
+  if systemctl is-enabled --quiet piradio-display 2>/dev/null; then
+    echo "== Screen and buttons: switched off"
+    systemctl disable --now piradio-display
+  fi
 fi
 
 if [ "$FAST_BOOT" = 1 ]; then

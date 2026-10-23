@@ -303,6 +303,11 @@ if grep -q '^PIRADIO_DISPLAY="1"' /etc/default/piradio 2>/dev/null; then
     else
         bad "Python libraries for the screen missing - run: sudo bash $SRC/install.sh --display"
     fi
+    if [[ -x /usr/lib/systemd/system-shutdown/piradio-display.shutdown ]]; then
+        ok "shutdown screen installed (\"Safe to unplug\" once the Pi has stopped)"
+    else
+        warn "shutdown screen not installed - run: sudo bash $SRC/install.sh"
+    fi
     restarts=$(systemctl show -p NRestarts --value piradio-display 2>/dev/null)
     [[ ${restarts:-0} -eq 0 ]] || warn "the screen program restarted itself $restarts time(s) - see: journalctl -u piradio-display -b --no-pager | tail -n 40"
     temp=$(vcgencmd measure_temp 2>/dev/null | sed -n "s/temp=\([0-9]*\).*/\1/p")
