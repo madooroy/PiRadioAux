@@ -202,3 +202,21 @@ api.st["last"] = 2; r.refresh()
 assert r.last_preset == 2 and "Bravo Radio" in r.frame()[0]["message"]
 r.step(+1); assert r.tuning == 2
 print("remembered station passed")
+
+# finding the screen's pins: by name (Pi 4), or by number on a Pi 3, whose pins are named by use
+class FakeChip:
+    def __init__(self, label, names): self.label, self.names = label, names
+    def __enter__(self): return self
+    def __exit__(self, *a): pass
+    def line_offset_from_id(self, name):
+        if name not in self.names: raise OSError("no such line")
+        return self.names.index(name)
+    def get_info(self): return type("Info", (), {"label": self.label, "num_lines": len(self.names)})()
+chips = {"pi4": FakeChip("pinctrl-bcm2711", [f"GPIO{n}" for n in range(58)]),
+         "pi3": FakeChip("pinctrl-bcm2835", ["ID_SDA", "ID_SCL"] + [f"GPIO{n}" for n in range(2, 7)] + ["SPI_CE1_N", "SPI_CE0_N", "SPI_MISO"] + [f"GPIO{n}" for n in range(10, 54)]),
+         "other": FakeChip("raspberrypi-exp-gpio", ["BT_ON", "WL_ON"])}
+fake_gpiod = type("G", (), {"Chip": staticmethod(lambda path: chips[path])})
+assert D.GpiodOutputs._find(fake_gpiod, "pi4", [9, 13]) == {9: 9, 13: 13}
+assert D.GpiodOutputs._find(fake_gpiod, "pi3", [9, 13]) == {9: 9, 13: 13}
+assert D.GpiodOutputs._find(fake_gpiod, "other", [9, 13]) is None
+print("pin lookup passed")

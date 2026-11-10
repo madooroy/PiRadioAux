@@ -137,7 +137,7 @@ When nothing is playing, the Stop Playing button reads "Not Playing" and is grey
 
 Starting Spotify stops the radio. Tapping a preset or Stop Playing ends the Spotify session. While Spotify is playing through the Pi, the page shows "Spotify" with the artist and song in the Now-playing box, and no preset is highlighted. Radio volume is the slider on the page; Spotify volume is in the Spotify app. Spotify starts each session at 50, and its slider is set up to sit close to the radio's, so switching between the two should not make you jump. They will not match exactly: stations are louder than Spotify at the same setting, and differ from one another.
 
-**If a station drops.** Internet streams stop now and then, because of a hiccup at the station or on your network. The Pi checks every 10 seconds that the station you chose is still playing, and restarts it if it has stopped or frozen. The page shows "Reconnecting…" while it does. If the station is down for a while, the Pi keeps trying, up to once a minute, until it returns or you press Stop Playing. It only does this for a station you started; Stop Playing, Power off, and starting Spotify all end it.
+**If a station drops.** Internet streams stop now and then, because of a hiccup at the station or on your network. The Pi checks every 10 seconds that the station you chose is still playing, and restarts it if it has stopped or frozen. The page shows "Reconnecting…" while it does. If the station is down for a while, the Pi keeps trying, up to once a minute, until it returns or you press Stop Playing. While your own internet is down, it waits for it, however long that takes. It only does this for a station you started; Stop Playing, Power off, and starting Spotify all end it. A station that never produces any sound after you tap it (a wrong address, say) is the exception: the Pi gives up after about a minute and says why under the volume slider.
 
 ## 5. The presets
 
@@ -212,11 +212,11 @@ After a power cut the Pi also restarts by itself; that is nearly always fine.
 | What | Does | Why |
 |---|---|---|
 | Wi-Fi power saving off | Keeps the Wi-Fi fully awake | Power saving is a known cause of Pi 4 Wi-Fi hangs |
-| Network check, every minute | If the router doesn't answer for 3 minutes, restarts the network; at 5 minutes, reloads the Wi-Fi driver; at 8, restarts the Pi (at most once every 6 hours, so a router that's switched off doesn't cause repeated restarts) | Catches a hung Wi-Fi while the rest of the Pi keeps running |
+| Network check, every minute | If neither the router nor the internet answers for 3 minutes, restarts the network; at 5 minutes, reloads the Wi-Fi driver; at 8, restarts the Pi (at most once every 6 hours, so a router that's switched off doesn't cause repeated restarts) | Catches a hung Wi-Fi while the rest of the Pi keeps running |
 | Copy of the Wi-Fi settings | Kept by the network check while the Wi-Fi works, and put back within a minute if the settings go missing | Once, after a power-off, the Wi-Fi settings came back as empty files, and the Pi had no network to join |
 | Hardware watchdog | Restarts the Pi within about 15 seconds if it freezes completely | Catches a full freeze, which nothing running on the Pi can |
 
-**After a restart,** the radio plays again if it was playing when the Pi stopped: after a freeze, a power cut, a restart by the network check, or an update. If it was stopped, or you used Power off, it comes back quiet. It waits up to two minutes for the network before starting the station. The system log is also kept across restarts (up to 50 MB), so the reason for an unexpected stop can be looked up. The health check's "Staying on" section shows that all of this is active, and warns if, in the last week, the network check had to go further than restarting the network. A plain network restart is routine: a router that restarts itself (some mesh systems do so every night) also triggers one, and the health check just notes it.
+**After a restart,** the radio plays again if it was playing when the Pi stopped: after a freeze, a power cut, a restart by the network check, or an update. If it was stopped, or you used Power off, it comes back quiet. It waits up to two minutes for the network before starting the station, and if the router takes longer than that to come back (after a power cut, say), it keeps trying until the station plays. The system log is also kept across restarts (up to 50 MB), so the reason for an unexpected stop can be looked up. The health check's "Staying on" section shows that all of this is active, and warns if, in the last week, the network check had to go further than restarting the network. A plain network restart is routine: a router that restarts itself (some mesh systems do so every night) also triggers one, and the health check just notes it.
 
 ## Keeping it updated
 
@@ -224,7 +224,7 @@ Updates are automatic. The installer sets the Pi to check every night around 11 
 
 What this means in practice:
 
-- If something is playing around 11 PM, it may stop for a moment when the radio player or Spotify Connect is updated. Tap the preset again, or press play in Spotify.
+- If something is playing around 11 PM, it may stop for a moment when the radio player or Spotify Connect is updated. The radio picks the station up again by itself within a few seconds; for Spotify, press play again.
 - The Pi must be powered and on Wi-Fi at 11 PM for that night's update to happen. If it misses one, it catches up the next time it can.
 - To see what was updated: `cat /var/log/unattended-upgrades/unattended-upgrades.log`
 - To update by hand at any time: `sudo apt update && sudo apt full-upgrade -y`
@@ -298,7 +298,7 @@ The marks sit in narrow strips down each side of the screen, beside their button
 - **The light** stays off while all is well. It shows amber while a station is connecting or reconnecting, and red when a station couldn't be played or the page can't be reached.
 - **The screen goes dark** a minute after playing stops. Any button wakes it.
 - **Switching off:** after Power off on the phone page (or `sudo poweroff`), the screen shows "Switching off…" and then "Safe to unplug" once the Pi has fully stopped. Wait for that before pulling the power. A restart shows "Restarting…" instead.
-- **The light is dimmed** to a fifth of full brightness. To change it, add `PIRADIO_LED_LEVEL="0.5"` (anything from 0 to 1) to `/etc/default/piradio`, then `sudo systemctl restart piradio-display`.
+- **The light is dimmed** to a fifth of full brightness. To change it, add `PIRADIO_LED_LEVEL="0.5"` (anything from 0 to 1) to `/etc/default/piradio`, then `sudo systemctl restart piradio-display`. The installer keeps settings like this one when it runs again.
 
 To set it up, fit the HAT with the Pi switched off and unplugged, then:
 
@@ -368,7 +368,16 @@ For a specific problem:
 | `config/netcheck.sh`, `config/piradio-netcheck.*` | The network check that restarts a hung Wi-Fi, see [Leave the Pi on](#leave-the-pi-on) |
 | `display.py`, `config/piradio-display.service`, `config/piradio-display.shutdown` | Optional screen and buttons, see [Screen and buttons](#screen-and-buttons-optional) |
 
-On the Pi the app lives in `/opt/piradio`, and its presets in `/opt/piradio/presets.json`.
+On the Pi the app lives in `/opt/piradio`, and its presets in `/opt/piradio/presets.json`. The program files there belong to root; the page runs as its own `piradio` user, which can change only its own data (presets, favorites, the last station).
+
+## Who can use the page
+
+Anyone on your home network can open the page and use it, as with any home speaker. A few things keep other people's web pages from using it behind your back:
+
+- The page answers only when it is opened by the Pi's own name (`piradio`, `piradio.local`, `piradio.lan` and the like, or the name you gave with `--hostname`) or by its IP address. If you reach it by another name (one set up in your router, say), add it to `/etc/default/piradio` as `PIRADIO_ALLOWED_HOSTS="radio.example.lan"` (several separated by commas), then `sudo systemctl restart piradio`.
+- Changes (playing, stopping, editing presets, Power off) must come from the page itself, which marks its requests; a link or form on another site can't make them.
+- **Check** and the now-playing lookup won't fetch addresses on the Pi itself or link-local addresses.
+- The page uses port 80. To use another, add `PIRADIO_PORT="8080"` to `/etc/default/piradio`, then `sudo systemctl restart piradio piradio-display`; the Spotify hand-over and the screen follow it.
 
 ## Acknowledgements
 

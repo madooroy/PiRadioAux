@@ -33,7 +33,7 @@ import urllib.request
 
 from PIL import Image, ImageDraw, ImageFont
 
-BASE_URL = os.environ.get("PIRADIO_URL", "http://127.0.0.1").rstrip("/")
+BASE_URL = os.environ.get("PIRADIO_URL", f"http://127.0.0.1:{os.environ.get('PIRADIO_PORT', '80')}").rstrip("/")
 NAME = os.environ.get("PIRADIO_NAME", "PiRadio")
 FLIP = os.environ.get("PIRADIO_DISPLAY_FLIP", "0") == "1"   # turn the picture (and buttons) around
 
@@ -322,7 +322,8 @@ class Api:
     def _call(self, method, path, body=None, timeout=8):
         data = json.dumps(body).encode() if body is not None else None
         req = urllib.request.Request(self.base + path, data=data, method=method,
-                                     headers={"Content-Type": "application/json"} if data else {})
+                                     headers={"Content-Type": "application/json", "X-PiRadio": "1"} if data
+                                     else {"X-PiRadio": "1"})
         with urllib.request.urlopen(req, timeout=timeout) as r:
             return json.loads(r.read() or b"null")
 
@@ -540,14 +541,12 @@ class GpiodOutputs:
         from gpiod.line import Bias, Direction, Value
         self._gpiod, self._value, self._bias, self._direction = gpiod, Value, Bias, Direction
         initial = initial or {}
+        offsets = None
         for path in sorted(glob.glob("/dev/gpiochip*")):
-            try:
-                with gpiod.Chip(path) as chip:
-                    offsets = {n: chip.line_offset_from_id(f"GPIO{n}") for n in names}
-            except (OSError, ValueError):
-                continue
-            break
-        else:
+            offsets = self._find(gpiod, path, names)
+            if offsets:
+                break
+        if not offsets:
             raise RuntimeError(f"no GPIO chip has pins {names}")
         self._offsets = offsets
         self._sticky = set(sticky)
@@ -555,6 +554,25 @@ class GpiodOutputs:
                                              config={offsets[n]: self._settings(n, initial.get(n, False))})
                       for n in names}
         self._state = {n: bool(initial.get(n, False)) for n in names}
+
+    @staticmethod
+    def _find(gpiod, path, names):
+        """The chip's line numbers for these GPIO numbers, or None if it isn't the
+        right chip. A Pi 4 or 5 names its lines GPIO9 and so on. Older boards name
+        some by their use instead (a Pi 3 calls GPIO 9 "SPI_MISO"); on the Pi's
+        own pin chip the line number is the GPIO number, so that is used then."""
+        try:
+            with gpiod.Chip(path) as chip:
+                try:
+                    return {n: chip.line_offset_from_id(f"GPIO{n}") for n in names}
+                except (OSError, ValueError):
+                    info = chip.get_info()
+                    if info.label.startswith(("pinctrl-bcm2835", "pinctrl-bcm2711")) \
+                            and all(n < info.num_lines for n in names):
+                        return {n: n for n in names}
+        except (OSError, ValueError):
+            pass
+        return None
 
     def _settings(self, name, on):
         kw = {"direction": self._direction.OUTPUT,

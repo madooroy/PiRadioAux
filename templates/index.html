@@ -248,7 +248,8 @@ async function api(method, path, body) {
   try {
     res = await fetch(path, {
       method,
-      headers: body ? { "Content-Type": "application/json" } : {},
+      // X-PiRadio: the Pi refuses changes without it, which keeps other web pages out.
+      headers: body ? { "Content-Type": "application/json", "X-PiRadio": "1" } : { "X-PiRadio": "1" },
       body: body ? JSON.stringify(body) : undefined,
     });
   } catch (e) {

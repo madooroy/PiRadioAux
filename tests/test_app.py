@@ -128,6 +128,7 @@ print("now-playing checks passed")
 # ---- watchdog ----
 A.threading.Thread = _RealThread
 A.mpd = fake_mpd
+A._host_resolves = lambda url: True          # the network is up (the made-up addresses can't really be looked up)
 Fake.elapsed = 0.0
 Fake.status = lambda self: {"state": Fake.state, "volume": str(Fake.vol), "elapsed": str(Fake.elapsed)}
 Fake.calls.clear()
@@ -152,9 +153,27 @@ assert c.get("/api/status").get_json()["recovering"] is False
 # frozen: "playing" but making no progress
 assert A.watchdog_tick(now=160) == "waiting" and A.watchdog_tick(now=170) == "waiting"
 assert A.watchdog_tick(now=180) == "restarted"
-# Stop, Spotify and Power off all end the watch
-Fake.elapsed = 9; A.watchdog_tick(now=190)
-c.post("/api/stop"); assert A._wanted is None and A.watchdog_tick(now=200) == "idle" and Fake.state == "stop"
+# the network is down (the name can't be looked up): keeps trying, but the tries don't count
+Fake.elapsed = 9; assert A.watchdog_tick(now=181) == "ok"
+Fake.state = "stop"; A._watch["played"] = False
+assert A.watchdog_tick(now=182) == "restarted" and A._watch["restarts"] == 1
+A._host_resolves = lambda url: False
+for t in range(200, 800, 31):
+    Fake.state = "stop"
+    assert A.watchdog_tick(now=t) in ("offline", "backoff"), t
+assert A._wanted is not None and A._watch["restarts"] == 1        # never gave up while offline
+A._host_resolves = lambda url: True; Fake.state = "stop"
+assert A.watchdog_tick(now=900) == "restarted" and A._wanted is not None
+Fake.elapsed = 3; A.watchdog_tick(now=901)
+# a playlist moving to its next track starts again at 0: that's progress, not a freeze
+Fake.elapsed = 40; A.watchdog_tick(now=910)
+Fake.status = lambda self: {"state": Fake.state, "volume": str(Fake.vol), "elapsed": str(Fake.elapsed), "songid": Fake.song}
+Fake.song = "1"; A.watchdog_tick(now=911)
+Fake.elapsed = 40.2; Fake.song = "2"; assert A.watchdog_tick(now=920) == "ok"   # same time, new track
+Fake.elapsed = 1; assert A.watchdog_tick(now=930) == "ok"                        # time went back
+Fake.status = lambda self: {"state": Fake.state, "volume": str(Fake.vol), "elapsed": str(Fake.elapsed)}
+Fake.elapsed = 9; A.watchdog_tick(now=990)
+c.post("/api/stop"); assert A._wanted is None and A.watchdog_tick(now=1000) == "idle" and Fake.state == "stop"
 c.post("/api/play/1"); n_spot = len(spot)
 r = c.post("/api/yield"); assert r.status_code == 200 and A._wanted is None and Fake.state == "stop" and len(spot) == n_spot
 assert A.watchdog_tick(now=300) == "idle" and Fake.state == "stop"      # radio stays off under Spotify
@@ -200,9 +219,10 @@ assert c.post("/api/check", json={}).status_code == 400
 real_open = A.urllib.request.urlopen
 # the real opener copes with old "ICY 200 OK" servers
 def icy(*a, **k): raise http.client.BadStatusLine("ICY 200 OK")
-A.urllib.request.urlopen = icy
+real_opener = A._opener.open
+A._opener.open = icy
 assert _real_probe("http://old/stream")[:2] == (200, "audio/mpeg")
-A.urllib.request.urlopen = real_open
+A._opener.open = real_opener
 print("address checks passed")
 
 # ---- station search ----

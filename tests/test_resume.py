@@ -52,7 +52,25 @@ A._host_resolves = lambda url: True
 # someone picked something else while it waited: leave that alone
 restart(); A._wanted = {"index": 0, "url": "http://x/a", "name": "A"}
 assert A.resume_after_restart(sleep=lambda s: None) is False
+# Stop pressed while it waits for the network: Stop wins
+c.post("/api/play/0"); restart()
+def stop_meanwhile(_):
+    c.post("/api/stop")
+answers = iter([False, True]); A._host_resolves = lambda url: next(answers)
+assert A.resume_after_restart(sleep=stop_meanwhile) is False and Fake.state == "stop" and A._wanted is None
+A._host_resolves = lambda url: True
+# a resumed station played before, so the watchdog never gives up on it (a slow router after a power cut)
+c.post("/api/play/1"); restart()
+assert A.resume_after_restart(sleep=lambda s: None) is True and A._watch["played"] is True
 print("waiting for the network passed")
+
+# the presets were reordered after it started: still found, by its address
+c.post("/api/play/1"); assert saved()["url"] == "http://x/b"
+c.put("/api/presets", json=[{"name": "B", "url": "http://x/b"}, {"name": "A", "url": "http://x/a"}])
+assert saved()["index"] == 0
+restart(); assert A.resume_after_restart(sleep=lambda s: None) is True and A._wanted["index"] == 0
+c.put("/api/presets", json=[{"name": "A", "url": "http://x/a"}, {"name": "B", "url": "http://x/b"}])
+print("reordered presets passed")
 
 # a station the watchdog gave up on is not tried again after a restart
 real = A.start_stream; A.start_stream = lambda cl, u: setattr(Fake, "state", "stop")

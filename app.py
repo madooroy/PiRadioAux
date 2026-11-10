@@ -4,6 +4,7 @@
 Runs on the Raspberry Pi. Open http://piradio.local on your phone.
 """
 import http.client
+import ipaddress
 import json
 import os
 import re
@@ -49,6 +50,85 @@ MAX_PRESETS = 20
 PLAYLIST_SUFFIXES = (".m3u", ".pls")
 
 app = Flask(__name__)
+# Presets, favorites and searches are small: refuse anything bigger, so a client
+# can't fill the card.
+app.config["MAX_CONTENT_LENGTH"] = 256 * 1024
+MAX_URL = 2000
+
+# --- Who may use the page -----------------------------------------------------
+# The page has no password: it is for the home network. Two checks keep other
+# web pages out. A page open on a phone or laptop on the same network can send
+# requests here, and a "DNS rebinding" page can even read the answers.
+#  * The address used must be this Pi's own: an IP address, its name, or its
+#    name with a home-network ending (.local, .lan, .home, ...). A rebinding
+#    page arrives under its own domain name and is refused.
+#  * A change (POST, PUT, DELETE) must carry the X-PiRadio header. A plain form
+#    or link on another site can't add one, and a script there can't either
+#    without the browser first asking this Pi, which doesn't agree.
+LOCAL_ENDINGS = ("", ".local", ".lan", ".home", ".home.arpa", ".localdomain", ".internal")
+EXTRA_HOSTS = {h.strip().lower() for h in os.environ.get("PIRADIO_ALLOWED_HOSTS", "").split(",") if h.strip()}
+
+
+def _host_allowed(host):
+    host = (host or "").strip().lower()
+    if host.startswith("["):                     # [IPv6]:port
+        host = host[1:host.find("]")] if "]" in host else host
+    elif host.count(":") == 1:                   # name:port or IPv4:port
+        host = host.split(":")[0]
+    try:
+        ipaddress.ip_address(host)
+        return True                               # used by its address
+    except ValueError:
+        pass
+    me = socket.gethostname().lower()
+    return host == "localhost" or host in EXTRA_HOSTS or any(host == me + end for end in LOCAL_ENDINGS)
+
+
+def _is_loopback():
+    return request.remote_addr in ("127.0.0.1", "::1")
+
+
+@app.before_request
+def guard():
+    if not _host_allowed(request.host):
+        return jsonify(error="Open this page by the Pi's own name or address."), 403
+    if request.method in ("POST", "PUT", "DELETE") and not _is_loopback() \
+            and request.headers.get("X-PiRadio") != "1":
+        return jsonify(error="Please reload the page and try again."), 403
+    return None
+
+
+def _refuse_private_target(url):
+    """Refuse addresses on this Pi itself or link-local ones (169.254.x, fe80::):
+    the page fetches what it is given, and must not become a way into this Pi's
+    own services or the network gear's. Ordinary home-network addresses (a NAS
+    streaming music, say) are still allowed."""
+    host = urlparse(url).hostname
+    if not host:
+        raise ValueError("That address has no server name in it.")
+    try:
+        infos = socket.getaddrinfo(host, None)
+    except OSError:
+        return   # can't be resolved: the fetch will fail on its own
+    for info in infos:
+        ip = ipaddress.ip_address(info[4][0].split("%")[0])
+        if ip.is_loopback or ip.is_link_local or ip.is_unspecified or ip.is_multicast:
+            raise ValueError("That address points at this Pi itself or at network equipment, so it isn't checked.")
+
+
+class _CheckedRedirects(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        _refuse_private_target(newurl)
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+_opener = urllib.request.build_opener(_CheckedRedirects)
+
+
+def _open(req, timeout):
+    """urlopen for addresses that came from the page (checks and now-playing feeds)."""
+    _refuse_private_target(req.full_url)
+    return _opener.open(req, timeout=timeout)
 _lock = threading.Lock()
 _last_preset = None  # index of the preset most recently started from this page
 
@@ -56,7 +136,8 @@ _last_preset = None  # index of the preset most recently started from this page
 # restarts the stream whenever it drops or freezes. Cleared by Stop, by
 # Power off, and when Spotify takes over.
 _wanted = None         # {"index": preset number, "url": stream address}
-_watch = {"elapsed": None, "stalled": 0, "restarts": 0, "next_try": 0.0, "recovering": False, "played": False}
+_watch = {"elapsed": None, "stalled": 0, "restarts": 0, "next_try": 0.0, "recovering": False, "played": False,
+          "songid": None}
 _notice = ""           # why the last station was given up on; shown on the page
 GIVE_UP_AFTER = 3      # restarts allowed for a station that has not played at all
 _play_lock = threading.RLock()
@@ -132,11 +213,13 @@ def clean_presets(data):
             raise BadRequest("Each preset needs a name and a stream address.")
         name = str(item.get("name", "")).strip()[:40]
         url = str(item.get("url", "")).strip()
+        feed = str(item.get("nowplaying", "")).strip()
+        if len(url) > MAX_URL or len(feed) > MAX_URL:
+            raise BadRequest(f"'{name}': that address is too long.")
         if not name:
             raise BadRequest("Every preset needs a name.")
         if url and urlparse(url).scheme not in ("http", "https"):
             raise BadRequest(f"'{name}': the stream address must start with http:// or https://")
-        feed = str(item.get("nowplaying", "")).strip()
         if feed and urlparse(feed).scheme not in ("http", "https"):
             raise BadRequest(f"'{name}': the now-playing address must start with http:// or https://")
         preset = {"name": name, "url": url}
@@ -161,7 +244,7 @@ BROWSER_UA = ("Mozilla/5.0 (X11; Linux aarch64) AppleWebKit/537.36 "
 
 def _http_get(url):
     req = urllib.request.Request(url, headers={"User-Agent": BROWSER_UA, "Accept": "application/json"})
-    with urllib.request.urlopen(req, timeout=6) as resp:
+    with _open(req, timeout=6) as resp:
         return resp.read(200_000).decode("utf-8", "replace")
 
 
@@ -283,22 +366,28 @@ def resume_after_restart(wait=120, step=2, sleep=time.sleep):
     except (OSError, ValueError):
         return False
     presets = load_presets()
-    i = saved.get("index") if isinstance(saved, dict) else None
-    if not isinstance(i, int) or not 0 <= i < len(presets) or presets[i]["url"] != saved.get("url"):
-        _remember(None)   # the presets have changed since: nothing sensible to resume
+    url = saved.get("url") if isinstance(saved, dict) else None
+    # Found by its address, so reordering the presets meanwhile doesn't lose it.
+    i = next((n for n, p in enumerate(presets) if url and p["url"] == url), None)
+    if i is None:
+        _remember(None)   # the station has been removed since: nothing sensible to resume
         return False
     waited = 0
     while not _host_resolves(saved["url"]) and waited < wait:
         sleep(step)
         waited += step
     with _play_lock:
-        # Someone may have chosen something else (or Spotify) in the meantime.
-        if _wanted is not None or spotify_status():
+        # Someone may have chosen something else (or Spotify), or pressed Stop,
+        # in the meantime.
+        if _wanted is not None or spotify_status() or not RESUME_FILE.exists():
             return False
         with mpd() as client:
             start_stream(client, saved["url"])
         _last_preset = i
         want({"index": i, "url": saved["url"], "name": presets[i].get("name", "")})
+        # It played before the restart, so it isn't a station that never works:
+        # keep trying for as long as it takes, not just three times.
+        _watch["played"] = True
     app.logger.warning("resumed %s after a restart", presets[i].get("name") or saved["url"])
     return True
 
@@ -307,6 +396,12 @@ def watchdog_tick(now=None):
     """One health check. Returns what it found, mainly for the tests."""
     global _wanted, _notice
     now = time.time() if now is None else now
+    # While it is already reconnecting, check that the network is there, before
+    # taking the lock: a name lookup can take seconds when the router is down,
+    # and the page and buttons shouldn't wait for it.
+    looking = _wanted
+    offline = bool(looking and _watch["recovering"] and now >= _watch["next_try"]
+                   and not _host_resolves(looking["url"]))
     with _play_lock:
         wanted = _wanted
         if not wanted:
@@ -318,8 +413,11 @@ def watchdog_tick(now=None):
                     elapsed = float(status.get("elapsed", 0))
                 except ValueError:
                     elapsed = 0.0
-                if _watch["elapsed"] is None or elapsed > _watch["elapsed"] + 0.5:
-                    _watch.update(elapsed=elapsed, stalled=0)
+                song = status.get("songid")
+                if _watch["elapsed"] is None or abs(elapsed - _watch["elapsed"]) > 0.5 \
+                        or song != _watch.get("songid"):
+                    # Any movement counts: a playlist's next track starts again at 0.
+                    _watch.update(elapsed=elapsed, stalled=0, songid=song)
                     if elapsed >= 2:   # sound has really come out, not just "connecting"
                         _watch.update(restarts=0, next_try=0.0, recovering=False, played=True)
                     return "ok"
@@ -330,6 +428,13 @@ def watchdog_tick(now=None):
             _watch["recovering"] = True
             if now < _watch["next_try"]:
                 return "backoff"
+            # While the network is down (the station's name can't be looked up),
+            # trying again doesn't count against the station: after a power cut
+            # the router may take minutes to come back.
+            if offline and wanted is looking:
+                _watch["next_try"] = now + 30
+                _watch.update(elapsed=None, stalled=0)
+                return "offline"
             if not _watch["played"] and _watch["restarts"] >= GIVE_UP_AFTER:
                 # It has never produced sound since it was tapped: stop trying.
                 app.logger.warning("giving up on %s after %d attempts", wanted["url"], _watch["restarts"] + 1)
@@ -422,7 +527,7 @@ def _probe(url):
     """Open an address briefly. Returns (status, content type, first bytes)."""
     req = urllib.request.Request(url, headers={"User-Agent": BROWSER_UA})
     try:
-        with urllib.request.urlopen(req, timeout=6) as resp:
+        with _open(req, timeout=6) as resp:
             ctype = (resp.headers.get("Content-Type") or "").split(";")[0].strip().lower()
             return resp.status, ctype, resp.read(2048), resp.geturl()
     except http.client.BadStatusLine as exc:
@@ -449,6 +554,8 @@ def check_address(url):
         status, ctype, head, *rest = _probe(url)
     except urllib.error.HTTPError as exc:
         return {"level": "bad", "message": f"The server answered with error {exc.code}. The address is probably wrong or out of date."}
+    except ValueError as exc:   # refused by _refuse_private_target
+        return {"level": "bad", "message": str(exc)}
     except Exception as exc:
         reason = getattr(exc, "reason", exc)
         return {"level": "bad", "message": f"Couldn't connect: {reason}"}
@@ -478,8 +585,8 @@ def check_address(url):
 
 
 def simpler_queries(query):
-    """Looser versions of a search to fall back on: "CKOI-FM" -> "CKOI",
-    "rythme 102.9" -> "rythme", and after that the first word alone."""
+    """Looser versions of a search to fall back on: "CJAB-FM" -> "CJAB",
+    "harmonie 98.7" -> "harmonie", and after that the first word alone."""
     q = re.sub(r"\b\d{2,4}(?:[.,]\d{1,2})?\b", " ", query)          # the frequency
     q = re.sub(r"(?i)\b(?:fm|am|hd\d?)\b", " ", q)                    # the band
     q = " ".join(re.sub(r"[-_/.,()]+", " ", q).split())
@@ -711,7 +818,10 @@ def api_stop():
 
 @app.post("/api/yield")
 def api_yield():
-    """Spotify has started playing: stop the radio and stop keeping it alive."""
+    """Spotify has started playing: stop the radio and stop keeping it alive.
+    Called by the Spotify Connect event hook on this Pi; not for other machines."""
+    if not _is_loopback():
+        return jsonify(error="Local use only."), 403
     want(None)
     with mpd() as client:
         client.stop()
@@ -721,7 +831,7 @@ def api_yield():
 @app.post("/api/spotify")
 def api_spotify():
     """Called by the Spotify Connect event hook on this Pi; not for other machines."""
-    if request.remote_addr not in ("127.0.0.1", "::1"):
+    if not _is_loopback():
         return jsonify(error="Local use only."), 403
     form = request.form
     event = form.get("event", "")[:40]
@@ -790,6 +900,8 @@ def api_check():
     url = str((request.get_json(silent=True) or {}).get("url", "")).strip()
     if not url:
         raise BadRequest("No address to check.")
+    if len(url) > MAX_URL:
+        raise BadRequest("That address is too long.")
     return jsonify(check_address(url))
 
 
@@ -843,6 +955,7 @@ def api_presets():
         want(None)  # the station being kept alive was edited away
     elif w:
         w["index"] = next(i for i, p in enumerate(presets) if p["url"] == w["url"])
+        _remember(w)
     return jsonify(presets=presets)
 
 

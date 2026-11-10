@@ -4,3 +4,5 @@ Description=PiRadio network check (restarts a hung Wi-Fi)
 [Service]
 Type=oneshot
 ExecStart=/usr/local/bin/piradio-netcheck
+# A run that hangs would stop the timer from starting the next one.
+TimeoutStartSec=120

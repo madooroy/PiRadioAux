@@ -81,10 +81,11 @@ fi
 section "Preset page"
 name=$(sed -n 's/^PIRADIO_NAME="\(.*\)"$/\1/p' /etc/default/piradio 2>/dev/null)
 info "name: ${name:-PiRadio}   address: http://$(hostname).local   or   http://$(hostname -I 2>/dev/null | awk '{print $1}')"
-status=$(curl -s -m 5 -o /tmp/piradio-health.$$ -w '%{http_code}' "http://127.0.0.1:$PORT/api/status" 2>/dev/null)
+status_file=$(mktemp)
+status=$(curl -s -m 5 -o "$status_file" -w '%{http_code}' "http://127.0.0.1:$PORT/api/status" 2>/dev/null)
 if [[ $status == 200 ]]; then
     ok "page answers on port $PORT"
-    python3 - /tmp/piradio-health.$$ <<'PY' 2>/dev/null | sed 's/^/        /'
+    python3 - "$status_file" <<'PY' 2>/dev/null | sed 's/^/        /'
 import json, sys
 s = json.load(open(sys.argv[1]))
 if s.get("playing"):
@@ -105,7 +106,7 @@ elif [[ $status == 503 ]]; then
 else
     bad "page does not answer on port $PORT (HTTP ${status:-none}) - see: journalctl -u piradio -b --no-pager | tail -n 30"
 fi
-rm -f /tmp/piradio-health.$$
+rm -f "$status_file"
 give_ups=$(journalctl -u piradio -b --no-pager 2>/dev/null | grep -c "giving up on")
 restarts_stream=$(journalctl -u piradio -b --no-pager 2>/dev/null | grep -c "stream stopped; restarting")
 info "since the Pi started: $restarts_stream stream reconnection(s), $give_ups station(s) given up on"

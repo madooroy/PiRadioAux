@@ -43,7 +43,9 @@ if [ -z "$NAME" ] && [ -f /etc/default/piradio ]; then
 fi
 NAME="${NAME:-PiRadio}"
 # The same for the screen-and-buttons choice.
-saved_setting() { sed -n "s/^$1=\"\(.*\)\"\$/\1/p" /etc/default/piradio 2>/dev/null; }
+# "|| true": on a new Pi there is no settings file yet, and with set -e a failing
+# sed inside an assignment would end the installer without a word.
+saved_setting() { sed -n "s/^$1=\"\(.*\)\"\$/\1/p" /etc/default/piradio 2>/dev/null || true; }
 if [ -z "$DISPLAY_CHOICE" ]; then
   [ "$(saved_setting PIRADIO_DISPLAY)" = 1 ] && DISPLAY_CHOICE=on || DISPLAY_CHOICE=off
 fi
@@ -172,20 +174,33 @@ fast_boot_apply() {
   initramfs_guard
   # 4. Bootloader (Raspberry Pi 4).
   set_net_install 0
-  echo "   The original files are kept beside the changed ones as *.piradio-bak."
+  echo "   A copy of the original settings is kept as *.piradio-bak until --undo-fast-boot."
   echo "   These take effect at the next restart:  sudo reboot"
 }
 
 fast_boot_undo() {
   echo "== Putting the start-up settings back (--undo-fast-boot)"
-  if [ -f "$BOOT/config.txt.piradio-bak" ]; then
-    cp "$BOOT/config.txt.piradio-bak" "$BOOT/config.txt"
-    echo "   config.txt: restored"
+  # Put back only the settings --fast-boot changed, so anything changed in
+  # config.txt since (the screen's SPI line, for one) is kept.
+  if [ -f "$BOOT/config.txt.piradio-bak" ] && [ -f "$BOOT/config.txt" ]; then
+    local key orig
+    for key in camera_auto_detect display_auto_detect boot_delay disable_splash auto_initramfs; do
+      orig="$(grep -m1 "^$key=" "$BOOT/config.txt.piradio-bak" || true)"
+      if [ -n "$orig" ]; then
+        sed -i "s/^$key=.*/$orig/" "$BOOT/config.txt"
+      else
+        sed -i "/^$key=/d" "$BOOT/config.txt"
+      fi
+    done
+    sed -i '/^# Faster start-up (PiRadio install.sh --fast-boot)$/d' "$BOOT/config.txt"
+    rm -f "$BOOT/config.txt.piradio-bak"
+    echo "   config.txt: start-up settings put back"
   else
     echo "   config.txt: no saved copy, left as it is"
   fi
   if [ -f "$BOOT/cmdline.txt" ] && grep -qw 'cloud-init=disabled' "$BOOT/cmdline.txt"; then
     sed -i 's/[[:space:]]*cloud-init=disabled//g' "$BOOT/cmdline.txt"
+    rm -f "$BOOT/cmdline.txt.piradio-bak"
     echo "   cloud-init: switched back on"
   else
     echo "   cloud-init: was not switched off"
@@ -251,6 +266,14 @@ Unattended-Upgrade::Origins-Pattern {
 Unattended-Upgrade::Remove-Unused-Dependencies "true";
 Unattended-Upgrade::Automatic-Reboot "true";
 Unattended-Upgrade::Automatic-Reboot-Time "03:00";
+// The radio player's and Spotify Connect's settings files are changed by this
+// installer. Without these, an update that also changes them would wait for a
+// question nobody answers, and those packages would stop being updated. Keep
+// our settings, take the package's choice where we never changed anything.
+Dpkg::Options {
+    "--force-confdef";
+    "--force-confold";
+};
 EOF2
 for t in apt-daily apt-daily-upgrade; do mkdir -p /etc/systemd/system/$t.timer.d; done
 printf '[Timer]\nOnCalendar=\nOnCalendar=*-*-* 22:30\nRandomizedDelaySec=10m\n' > /etc/systemd/system/apt-daily.timer.d/piradio.conf
@@ -260,9 +283,9 @@ systemctl enable --now apt-daily.timer apt-daily-upgrade.timer
 
 echo "== 2/6  Finding the audio output"
 # Prefer a USB audio adapter; fall back to the Pi's own headphone jack.
-CARD="$(aplay -l | awk -F'[ :]+' '/^card/ && /USB/ {print $3; exit}')"
+CARD="$( (aplay -l 2>/dev/null || true) | awk -F'[ :]+' '/^card/ && /USB/ {print $3; exit}')"
 if [ -z "$CARD" ]; then
-  CARD="$(aplay -l | awk -F'[ :]+' '/^card/ && /Headphones/ {print $3; exit}')"
+  CARD="$( (aplay -l 2>/dev/null || true) | awk -F'[ :]+' '/^card/ && /Headphones/ {print $3; exit}')"
   echo "   No USB audio adapter found - using the built-in headphone jack ($CARD)."
   echo "   Plug the adapter in and run this script again to switch to it."
 else
@@ -369,12 +392,31 @@ if [ ! -f "$APP_DIR/presets.json" ]; then
     cp "$HERE/presets.json" "$APP_DIR/presets.json"         # the examples
   fi
 fi
-chown -R piradio:piradio "$APP_DIR"
+# The program files belong to root, so the page (which runs as piradio) can't
+# change them: the shutdown screen runs display.py as root. The folder is
+# writable by piradio for its own data (presets, favorites, the last station),
+# with the sticky bit, so piradio can replace only files it owns.
+rm -rf "$APP_DIR/__pycache__"
+chown -R root:root "$APP_DIR/app.py" "$APP_DIR/display.py" "$APP_DIR/templates" "$APP_DIR/static"
+chmod -R u=rwX,go=rX "$APP_DIR/app.py" "$APP_DIR/display.py" "$APP_DIR/templates" "$APP_DIR/static"
+chown root:piradio "$APP_DIR"
+chmod 1775 "$APP_DIR"
+[ -f "$APP_DIR/presets.json" ] && chown piradio:piradio "$APP_DIR/presets.json"
 DISPLAY_ON=0; [ "$DISPLAY_CHOICE" = on ] && DISPLAY_ON=1
-printf 'PIRADIO_NAME="%s"\nPIRADIO_DISPLAY="%s"\nPIRADIO_DISPLAY_FLIP="%s"\n' "$NAME" "$DISPLAY_ON" "$FLIP_CHOICE" > /etc/default/piradio
-echo 'piradio ALL=(root) NOPASSWD: /usr/bin/systemctl restart raspotify, /usr/bin/systemctl poweroff' > /etc/sudoers.d/piradio
-chmod 440 /etc/sudoers.d/piradio
-visudo -cf /etc/sudoers.d/piradio >/dev/null
+# Rewrite the installer's own settings and keep any others (PIRADIO_LED_LEVEL,
+# PIRADIO_PORT, ...) that were added by hand.
+{
+  printf 'PIRADIO_NAME="%s"\nPIRADIO_DISPLAY="%s"\nPIRADIO_DISPLAY_FLIP="%s"\n' "$NAME" "$DISPLAY_ON" "$FLIP_CHOICE"
+  grep -vE '^(PIRADIO_NAME|PIRADIO_DISPLAY|PIRADIO_DISPLAY_FLIP)=' /etc/default/piradio 2>/dev/null || true
+} > /etc/default/piradio.new
+mv /etc/default/piradio.new /etc/default/piradio
+# The sudo rule is checked before it is put in place: a broken file in
+# /etc/sudoers.d would stop sudo working for everyone.
+SUDO_TMP="$(mktemp)"
+echo 'piradio ALL=(root) NOPASSWD: /usr/bin/systemctl restart raspotify, /usr/bin/systemctl poweroff' > "$SUDO_TMP"
+visudo -cf "$SUDO_TMP" >/dev/null
+install -m 440 -o root -g root "$SUDO_TMP" /etc/sudoers.d/piradio
+rm -f "$SUDO_TMP"
 cp "$HERE/config/piradio.service" /etc/systemd/system/piradio.service
 systemctl daemon-reload
 systemctl enable piradio

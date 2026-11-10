@@ -7,8 +7,8 @@ g = runpy.run_path(os.path.join(os.path.dirname(os.path.abspath(__file__)), "tes
 A, c, Fake = g["A"], g["c"], g["Fake"]
 A.threading.Thread = g["_RealThread"]; A.mpd = g["fake_mpd"]
 # region block
-A._probe = lambda u: (200, "application/x-mpegurl", b"#EXTM3U\n#EXT-X-VERSION:3", "http://cdn.cogecolive.com/geoblock/stream_geoblocked_fr.m3u8")
-r = A.check_address("https://p/api/livestream-redirect/CKOIFMAAC_SC.aac"); assert r["level"] == "bad" and "country" in r["message"], r
+A._probe = lambda u: (200, "application/x-mpegurl", b"#EXTM3U\n#EXT-X-VERSION:3", "http://cdn.example-streams.net/geoblock/stream_geoblocked_fr.m3u8")
+r = A.check_address("https://p/api/livestream-redirect/CJABFMAAC_SC.aac"); assert r["level"] == "bad" and "country" in r["message"], r
 A._probe = lambda u: (200, "audio/mpeg", b"", u)
 assert A.check_address("https://p/a.mp3")["level"] == "ok"
 # give up on a station that never starts

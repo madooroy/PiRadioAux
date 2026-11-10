@@ -3,8 +3,8 @@
 #
 # The Pi 4's Wi-Fi can hang while the rest of the Pi keeps running: the page
 # can't be reached and the radio goes quiet, but nothing has crashed, so the
-# hardware watchdog never steps in. This checks that the router answers, and
-# when it doesn't, for so many minutes in a row:
+# hardware watchdog never steps in. This checks that the router answers (or that
+# the internet can be reached), and when neither does, for so many minutes in a row:
 #    1  if the saved Wi-Fi settings have gone missing, puts back the copy
 #       kept below
 #    3  restarts the network
@@ -31,6 +31,10 @@ NOW=${PIRADIO_NOW:-$(date +%s)}
 UPTIME_S=${PIRADIO_UPTIME:-$(cut -d. -f1 /proc/uptime)}
 RUN=${PIRADIO_NETCHECK_RUN:-}     # "echo" for a dry run: print the actions instead
 PAUSE=${PIRADIO_NETCHECK_PAUSE:-3}
+# Every step that talks to the Wi-Fi gets 30 seconds at most: a hung chip can
+# make "modprobe -r" or nmcli wait for ever, and then the later steps (the Pi
+# restart at minute 8) would never come. The service has its own limit too.
+DO=${RUN:-timeout 30}
 REBOOT_GAP=$((6 * 3600))
 
 umask 077
@@ -46,7 +50,16 @@ reachable() {
   local gw
   gw=$(ip -4 route show default 2>/dev/null | awk '/^default/ {print $3; exit}')
   [ -n "$gw" ] || return 1
-  ping -c 2 -W 2 -q "$gw" >/dev/null 2>&1
+  ping -c 2 -W 2 -q "$gw" >/dev/null 2>&1 && return 0
+  # Some routers (mesh, guest or isolated networks) don't answer ping. The
+  # router having just answered the Pi's "who has this address?" counts too,
+  # and so does reaching a public address on the internet.
+  ip neigh show "$gw" 2>/dev/null | grep -qw REACHABLE && return 0
+  local ip
+  for ip in 1.1.1.1 8.8.8.8 9.9.9.9; do
+    timeout 4 bash -c "exec 3<>/dev/tcp/$ip/443" 2>/dev/null && return 0
+  done
+  return 1
 }
 
 has_wifi_settings() {
@@ -63,9 +76,9 @@ note() {
 }
 
 restart_network() {
-  $RUN nmcli networking off
+  $DO nmcli networking off
   sleep "$PAUSE"
-  $RUN nmcli networking on
+  $DO nmcli networking on
 }
 
 reload_wifi_driver() {
@@ -73,11 +86,11 @@ reload_wifi_driver() {
   # (brcmfmac_cyw on the Pi 4) that holds it. Those have to go first.
   local holder
   for holder in "$SYS"/module/brcmfmac/holders/*; do
-    [ -e "$holder" ] && $RUN modprobe -r "$(basename "$holder")"
+    [ -e "$holder" ] && $DO modprobe -r "$(basename "$holder")"
   done
-  $RUN modprobe -r brcmfmac
+  $DO modprobe -r brcmfmac
   sleep "$PAUSE"
-  $RUN modprobe brcmfmac   # loads the chip-family module again by itself
+  $DO modprobe brcmfmac   # loads the chip-family module again by itself
 }
 
 # Copy the Wi-Fi settings files that are there and not empty, when they differ
@@ -115,10 +128,10 @@ restore_settings() {
   sync
   # Settings kept in netplan become NetworkManager connections through netplan.
   if [ -n "$(ls -A "$ROOT/etc/netplan" 2>/dev/null)" ] && command -v netplan >/dev/null; then
-    $RUN netplan generate
+    $DO netplan generate
   fi
-  $RUN nmcli connection reload
-  $RUN nmcli device connect wlan0
+  $DO nmcli connection reload
+  $DO nmcli device connect wlan0
 }
 
 COUNT=$STATE_DIR/failed-minutes

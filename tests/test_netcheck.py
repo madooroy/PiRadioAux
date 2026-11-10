@@ -68,3 +68,28 @@ os.remove(WIFI); open(kept, "w").close()
 assert run("fail", wifi="no") == [] and "the saved copy has nothing to put back" in log()
 run("ok")
 print("putting the settings back passed")
+
+# a router that doesn't answer ping: its "who has" answer, or the internet, still counts as up
+BIN = os.path.join(T, "bin"); os.makedirs(BIN)
+for name, body in {
+    "ip": 'case "$*" in *route*) echo "default via 10.9.8.1 dev wlan0";; *neigh*) echo "10.9.8.1 dev wlan0 lladdr 00:11:22:33:44:55 $NEIGH";; esac',
+    "ping": "exit 1",
+    "timeout": '[ "$TCP" = ok ]',
+}.items():
+    path = os.path.join(BIN, name); open(path, "w").write("#!/bin/bash\n" + body + "\n"); os.chmod(path, 0o755)
+
+def real(neigh, tcp):
+    env = dict(os.environ, PATH=BIN + ":" + os.environ["PATH"], NEIGH=neigh, TCP=tcp,
+               PIRADIO_NETCHECK_STATE=os.path.join(T, "run2"), PIRADIO_NETCHECK_LIB=os.path.join(T, "lib2"),
+               PIRADIO_NETCHECK_ROOT=ROOT, PIRADIO_NETCHECK_SYS=SYS, PIRADIO_NETCHECK_RUN="echo",
+               PIRADIO_NETCHECK_PAUSE="0", PIRADIO_NETCHECK_HAS_WIFI="yes", PIRADIO_NOW=str(clock[0]), PIRADIO_UPTIME="3600")
+    clock[0] += 60
+    subprocess.run(["bash", SCRIPT], env=env, check=True, capture_output=True)
+    f = os.path.join(T, "run2", "failed-minutes")
+    return int(open(f).read()) if os.path.exists(f) else 0
+
+assert real("REACHABLE", "fail") == 0          # answered "who has": up
+assert real("FAILED", "ok") == 0               # the internet answers: up
+assert real("FAILED", "fail") == 1 and real("STALE", "fail") == 2   # neither: counted as down
+assert real("REACHABLE", "fail") == 0
+print("routers that ignore ping passed")
