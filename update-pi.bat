@@ -16,7 +16,7 @@ rem over in the old one (folders that arrived read-only, say) can get in the
 rem way. Windows marks the folders read-only and lists them before their files,
 rem so their permissions are set only at the end (--delay-directory-restore),
 rem then made writable. The old copy is kept as ~/%DIR%.previous.
-tar -C "%PARENT%" --exclude=.git --exclude=__pycache__ -cf - "%DIR%" | ssh %PI% "set -e; cd ~; rm -rf .piradio-new; mkdir .piradio-new; tar --warning=no-unknown-keyword --no-same-permissions --delay-directory-restore -xf - -C .piradio-new; chmod -R u+rwX,go+rX .piradio-new; if [ -e '%DIR%' ]; then chmod -R u+rwX '%DIR%' '%DIR%.previous' 2>/dev/null || true; rm -rf '%DIR%.previous'; mv '%DIR%' '%DIR%.previous'; fi; mv '.piradio-new/%DIR%' '%DIR%'; rmdir .piradio-new"
+tar -C "%PARENT%" --exclude=.git --exclude=__pycache__ -cf - "%DIR%" | ssh %PI% "set -e; cd ~; chmod -R u+rwX .piradio-new 2>/dev/null || true; rm -rf .piradio-new; mkdir .piradio-new; tar --warning=no-unknown-keyword --no-same-permissions --delay-directory-restore -xf - -C .piradio-new; chmod -R u+rwX,go+rX .piradio-new; if [ -e '%DIR%' ]; then chmod -R u+rwX '%DIR%' '%DIR%.previous' 2>/dev/null || true; rm -rf '%DIR%.previous'; mv '%DIR%' '%DIR%.previous'; fi; mv '.piradio-new/%DIR%' '%DIR%'; rmdir .piradio-new"
 if errorlevel 1 goto failed
 echo.
 echo Installing on the Pi ...
