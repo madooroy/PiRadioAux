@@ -10,10 +10,11 @@ for %%I in ("%SRC%") do set "DIR=%%~nxI"
 for %%I in ("%SRC%\..") do set "PARENT=%%~fI"
 echo Copying "%SRC%" to %PI% ...
 rem tar (built into Windows 10 and 11) instead of scp: it leaves out Git's own
-rem folder, whose read-only files make a second scp copy fail. The Pi's copy is
-rem made writable before and after, so a folder that arrived read-only from
-rem Windows can't block the next update.
-tar -C "%PARENT%" --exclude=.git --exclude=__pycache__ -cf - "%DIR%" | ssh %PI% "chmod -R u+rwX ~/'%DIR%' 2>/dev/null; tar --warning=no-unknown-keyword --no-same-permissions -xf - -C ~ && chmod -R u+rwX ~/'%DIR%'"
+rem folder, whose read-only files make a second scp copy fail. The copy is
+rem unpacked into a new folder on the Pi and then swapped in, so nothing left
+rem over in the old one (folders that arrived read-only, say) can get in the
+rem way. The old copy is kept as ~/%DIR%.previous.
+tar -C "%PARENT%" --exclude=.git --exclude=__pycache__ -cf - "%DIR%" | ssh %PI% "set -e; cd ~; rm -rf .piradio-new; mkdir .piradio-new; tar --warning=no-unknown-keyword --no-same-permissions -xf - -C .piradio-new; chmod -R u+rwX,go+rX .piradio-new; if [ -e '%DIR%' ]; then chmod -R u+rwX '%DIR%' '%DIR%.previous' 2>/dev/null || true; rm -rf '%DIR%.previous'; mv '%DIR%' '%DIR%.previous'; fi; mv '.piradio-new/%DIR%' '%DIR%'; rmdir .piradio-new"
 if errorlevel 1 goto failed
 echo.
 echo Installing on the Pi ...
