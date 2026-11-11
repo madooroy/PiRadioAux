@@ -10,8 +10,10 @@ for %%I in ("%SRC%") do set "DIR=%%~nxI"
 for %%I in ("%SRC%\..") do set "PARENT=%%~fI"
 echo Copying "%SRC%" to %PI% ...
 rem tar (built into Windows 10 and 11) instead of scp: it leaves out Git's own
-rem folder, whose read-only files make a second scp copy fail.
-tar -C "%PARENT%" --exclude=.git --exclude=__pycache__ -cf - "%DIR%" | ssh %PI% "tar --warning=no-unknown-keyword -xf - -C ~"
+rem folder, whose read-only files make a second scp copy fail. The Pi's copy is
+rem made writable before and after, so a folder that arrived read-only from
+rem Windows can't block the next update.
+tar -C "%PARENT%" --exclude=.git --exclude=__pycache__ -cf - "%DIR%" | ssh %PI% "chmod -R u+rwX ~/'%DIR%' 2>/dev/null; tar --warning=no-unknown-keyword --no-same-permissions -xf - -C ~ && chmod -R u+rwX ~/'%DIR%'"
 if errorlevel 1 goto failed
 echo.
 echo Installing on the Pi ...
